@@ -2,7 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { EC2Client, DescribeVolumesCommand, DescribeAddressesCommand } from '@aws-sdk/client-ec2';
+import { EC2Client, DescribeVolumesCommand, DescribeAddressesCommand, DescribeInstancesCommand } from '@aws-sdk/client-ec2';
 
 // 1. Загружаем настройки из .env
 dotenv.config();
@@ -35,70 +35,99 @@ const ec2 = new EC2Client({
 // 5. Главный роут (путь) для сканирования AWS
 app.get('/api/scan', async (req, res) => {
     try {
-        console.log('🔍 Запуск сканирования AWS ресурсов...');
+        console.log('🔍 Полный скан инфраструктуры...');
 
-        // А) Получаем неиспользуемые диски (EBS)
-        const volCommand = new DescribeVolumesCommand({
-            Filters: [{ Name: 'status', Values: ['available'] }]
-        });
-        const { Volumes } = await ec2.send(volCommand);
-
-        // Б) Получаем неиспользуемые IP (Elastic IP)
-        const ipCommand = new DescribeAddressesCommand({});
-        const { Addresses } = await ec2.send(ipCommand);
-        const unusedIps = (Addresses || []).filter(ip => !ip.AssociationId);
-
-        // В) Превращаем "сырые" данные в понятные нам объекты
-        const resources = [
-            ...(Volumes || []).map(v => ({
-                id: v.VolumeId,
-                type: 'EBS Volume',
-                size: `${v.Size} GB`,
-                cost: (v.Size || 0) * 0.1 // Пример: $0.10 за ГБ
-            })),
-            ...unusedIps.map(ip => ({
-                id: ip.PublicIp,
-                type: 'Elastic IP',
-                size: 'N/A',
-                cost: 3.60 // Фиксированная цена за простой IP
-            }))
-        ];
-
-        // Г) Считаем общую сумму потерь
-        const total = resources.reduce((sum, res) => sum + res.cost, 0);
-
-        // Д) Сохраняем результат в базу данных MongoDB
-        const newAudit = await Audit.create({
-            totalWasted: total,
-            resourcesFound: resources
-        });
-
-        console.log('✅ Результаты сохранены в базу!');
+        // 1. ПОЛУЧАЕМ ВСЕ ДИСКИ (EBS)
+        const volData = await ec2.send(new DescribeVolumesCommand({}));
+        const volumes = volData.Volumes || [];
+        console.log(`📦 Найденo дисков: ${volumes.length}`);
         
-        // Отправляем данные фронтенду
-        res.json(newAudit);
+        // 2. ПОЛУЧАЕМ ВСЕ СЕРВЕРА (EC2)
+        const instData = await ec2.send(new DescribeInstancesCommand({}));
+        const instances = instData.Reservations?.flatMap(r => r.Instances || []) || [];
+        console.log(`🖥️  Найheно серверов: ${instances.length}`);
+
+        // 3. ПОЛУЧАЕМ IP
+        const ipData = await ec2.send(new DescribeAddressesCommand({}));
+        const ips = ipData.Addresses || [];
+        console.log(`🌐 Найдено IP: ${ips.length}`);
+
+        // --- РАСЧЕТЫ (МАТЕМАТИКА) ---
+
+        // Цены (условные)
+        const PRICE_PER_GB = 0.08;      // $ за ГБ диска
+        const PRICE_PER_SERVER = 15.00; // $ за t2.micro сервер в месяц
+        const PRICE_PER_IP = 3.60;      // $ за простой IP
+
+        // А. Считаем ПОЛНУЮ стоимость (Total Spend)
+        const totalDisksCost = volumes.reduce((sum, v) => sum + (v.Size || 0) * PRICE_PER_GB, 0);
+        const totalServersCost = instances.filter(i => i.State?.Name === 'running').length * PRICE_PER_SERVER;
+        const totalSpend = totalDisksCost + totalServersCost;
+        console.log(`💰 Total Spend: $${totalSpend.toFixed(2)}`);
+
+        // Б. Считаем МУСОР (Total Waste)
+        const wastedVolumes = volumes.filter(v => v.State === 'available');
+        const wastedVolCost = wastedVolumes.reduce((sum, v) => sum + (v.Size || 0) * PRICE_PER_GB, 0);
+
+        const wastedIps = ips.filter(ip => !ip.AssociationId);
+        const wastedIpCost = wastedIps.length * PRICE_PER_IP;
+
+        const totalWaste = wastedVolCost + wastedIpCost;
+        console.log(`❌ Total Waste: $${totalWaste.toFixed(2)}`);
+
+        // 4. Формируем красивый ответ
+        const result = {
+            summary: {
+                totalSpend: parseFloat(totalSpend.toFixed(2)),
+                totalWaste: parseFloat(totalWaste.toFixed(2)),
+                serverCount: instances.length,
+                diskCount: volumes.length,
+                wasteCount: wastedVolumes.length + wastedIps.length
+            },
+            resources: [
+                ...wastedVolumes.map(v => ({ 
+                    id: v.VolumeId, 
+                    type: 'EBS', 
+                    size: v.Size, 
+                    cost: parseFloat(((v.Size || 0) * PRICE_PER_GB).toFixed(2)),
+                    region: v.AvailabilityZone 
+                })),
+                ...wastedIps.map(ip => ({ 
+                    id: ip.PublicIp, 
+                    type: 'IP', 
+                    size: 0, 
+                    cost: PRICE_PER_IP,
+                    region: ip.Domain 
+                }))
+            ]
+        };
+
+        console.log('✅ Результат:', JSON.stringify(result, null, 2));
+
+        // Сохраняем в базу
+        await Audit.create({
+            totalWasted: totalWaste,
+            resourcesFound: result.resources
+        });
+
+        // ОТПРАВЛЯЕМ РЕЗУЛЬТАТ
+        return res.json(result);
 
     } catch (error) {
-        console.error('❌ Ошибка сервера:', error);
-        res.status(500).json({ message: 'Internal Server Error' });
+        console.error('❌ Ошибка при сканировании:', error);
+        return res.status(500).json({ error: 'Scan failed', message: String(error) });
     }
 });
 
-// 6. Роут для получения истории (последние 5 сканирований)
-app.get('/api/history', async (req, res) => {
-    const history = await Audit.find().sort({ date: -1 }).limit(5);
-    res.json(history);
-});
-
-// 7. Запуск сервера и подключение к базе
-const start = async () => {
-    try {
-        await mongoose.connect(process.env.MONGO_URI!);
-        console.log('🍃 MongoDB Connected');
-        app.listen(PORT, () => console.log(`🚀 Server started on port ${PORT}`));
-    } catch (err) {
-        console.error('Failed to connect to MongoDB', err);
-    }
-};
-
-start();
+// 6. Подключение к MongoDB и запуск сервера
+mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/aws_optimizer')
+    .then(() => {
+        console.log('✅ MongoDB подключена');
+        app.listen(PORT, () => {
+            console.log(`🚀 Сервер запущен на http://localhost:${PORT}`);
+        });
+    })
+    .catch(err => {
+        console.error('❌ Ошибка подключения к MongoDB:', err);
+        process.exit(1);
+    });
