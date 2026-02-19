@@ -84,6 +84,37 @@ app.get('/api/scan', async (req, res) => {
                 diskCount: volumes.length,
                 wasteCount: wastedVolumes.length + wastedIps.length
             },
+            // ВСЕ ресурсы (активные + неиспользуемые)
+            allResources: [
+                // Все EC2 инстансы
+                ...instances.map(inst => ({
+                    id: inst.InstanceId,
+                    type: 'EC2',
+                    size: 0,
+                    cost: inst.State?.Name === 'running' ? PRICE_PER_SERVER : 0,
+                    region: inst.Placement?.AvailabilityZone || 'unknown',
+                    status: inst.State?.Name || 'unknown'
+                })),
+                // Все EBS диски
+                ...volumes.map(vol => ({
+                    id: vol.VolumeId,
+                    type: 'EBS',
+                    size: vol.Size,
+                    cost: parseFloat(((vol.Size || 0) * PRICE_PER_GB).toFixed(2)),
+                    region: vol.AvailabilityZone || 'unknown',
+                    status: vol.State || 'unknown'
+                })),
+                // Все Elastic IPs
+                ...ips.map(ip => ({
+                    id: ip.PublicIp,
+                    type: 'IP',
+                    size: 0,
+                    cost: ip.AssociationId ? 0 : PRICE_PER_IP,  // Платим только за неиспользуемые IPs
+                    region: ip.Domain || 'vpc',
+                    status: ip.AssociationId ? 'attached' : 'unattached'
+                }))
+            ],
+            // ТОЛЬКО неиспользуемые ресурсы
             resources: [
                 ...wastedVolumes.map(v => ({ 
                     id: v.VolumeId, 

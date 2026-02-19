@@ -5,20 +5,7 @@ interface ResourcesPageProps {
 }
 
 export const ResourcesPage = ({ data }: ResourcesPageProps) => {
-  const allResources = data?.summary ? [
-    // Активные ресурсы
-    ...(data.allResources || []).map((r: any) => ({
-      ...r,
-      status: 'active',
-      isWasted: false
-    })),
-    // Неиспользуемые ресурсы
-    ...(data.resources || []).map((r: any) => ({
-      ...r,
-      status: 'unused',
-      isWasted: true
-    }))
-  ] : [];
+  const allResources = data?.allResources || [];
 
   const getStatusColor = (status: string) => {
     if (status === 'active') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
