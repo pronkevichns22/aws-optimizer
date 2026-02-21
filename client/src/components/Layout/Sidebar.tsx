@@ -1,8 +1,8 @@
 import { LayoutDashboard, Database, ShieldAlert, Settings, LogOut, Cloud } from 'lucide-react';
 
 interface SidebarProps {
-  currentPage?: 'dashboard' | 'resources';
-  onPageChange?: (page: 'dashboard' | 'resources') => void;
+  currentPage?: 'dashboard' | 'resources' | 'security';
+  onPageChange?: (page: 'dashboard' | 'resources' | 'security') => void;
 }
 
 export const Sidebar = ({ currentPage = 'dashboard', onPageChange }: SidebarProps) => {
@@ -30,7 +30,7 @@ export const Sidebar = ({ currentPage = 'dashboard', onPageChange }: SidebarProp
           {menuItems.map((item) => (
             <li 
               key={item.id} 
-              onClick={() => onPageChange?.(item.id as 'dashboard' | 'resources')}
+              onClick={() => onPageChange?.(item.id as 'dashboard' | 'resources' | 'security')}
               className={`flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition-all duration-200 ${currentPage === item.id ? 'bg-indigo-50 text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-gray-50'}`}
             >
               {item.icon}

@@ -1,4 +1,6 @@
-import { Activity, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
+import { StatCard } from '../components/ui/StatCard';
+import { DollarSign, AlertTriangle, Server, HardDrive, Globe } from 'lucide-react';
 
 interface ResourcesPageProps {
   data?: any;
@@ -31,41 +33,44 @@ export const ResourcesPage = ({ data }: ResourcesPageProps) => {
         <p className="text-slate-500 mt-1">View all your AWS infrastructure resources</p>
       </div>
 
-      {/* Статистика */}
+      {/* Статистика - Ключевые ресурсы */}
       {data?.summary && (
-        <div className="grid grid-cols-3 gap-6 mb-10">
-          <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-2xl">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Active Resources</span>
-              <Activity className="text-emerald-500" size={20} />
-            </div>
-            <p className="text-3xl font-black text-emerald-600">
-              {(data.summary.serverCount || 0) + (data.summary.diskCount || 0)}
-            </p>
-            <p className="text-xs text-emerald-600 mt-2">Running instances & volumes</p>
-          </div>
+        <div className="grid grid-cols-4 gap-6 mb-10">
+          {/* 1. Running Instances */}
+          <StatCard 
+            title="Running Instances" 
+            value={data.summary.serverCount || 0} 
+            icon={<Server />} 
+            trend="Active EC2"
+            isMain={false}
+          />
 
-          <div className="bg-red-50 border border-red-200 p-6 rounded-2xl">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-red-600 uppercase tracking-wider">Unused Resources</span>
-              <AlertCircle className="text-red-500" size={20} />
-            </div>
-            <p className="text-3xl font-black text-red-600">
-              {data.summary.wasteCount || 0}
-            </p>
-            <p className="text-xs text-red-600 mt-2">Costing ${data.summary.totalWaste?.toFixed(2)}</p>
-          </div>
+          {/* 2. Potential Savings (АКЦЕНТНАЯ) */}
+          <StatCard 
+            title="Potential Savings" 
+            value={`$${data.summary.totalWaste?.toFixed(2) || '0.00'}`} 
+            icon={<AlertTriangle />} 
+            trend="Monthly Waste"
+            isMain={true}
+          />
 
-          <div className="bg-blue-50 border border-blue-200 p-6 rounded-2xl">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">Total Cost</span>
-              <span className="text-lg font-black text-blue-600">$</span>
-            </div>
-            <p className="text-3xl font-black text-blue-600">
-              ${data.summary.totalSpend?.toFixed(2)}
-            </p>
-            <p className="text-xs text-blue-600 mt-2">Monthly spending</p>
-          </div>
+          {/* 3. Total Volumes */}
+          <StatCard 
+            title="Total Volumes" 
+            value={data.summary.diskCount || 0} 
+            icon={<HardDrive />} 
+            trend="EBS Block Storage"
+            isMain={false}
+          />
+
+          {/* 4. Elastic IPs */}
+          <StatCard 
+            title="Elastic IPs" 
+            value={data.allResources?.filter((r: any) => r.type === 'IP').length || 0} 
+            icon={<Globe />} 
+            trend="Static Addresses"
+            isMain={false}
+          />
         </div>
       )}
 
