@@ -75,18 +75,18 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
   };
 
   return (
-    <div className="bg-white rounded-2xl ring-1 ring-slate-900/5 shadow-sm shadow-slate-200/50 overflow-hidden">
+    <div className="bg-white rounded-3xl ring-1 ring-slate-900/5 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
       {/* Header */}
-      <div className="p-6 border-b border-slate-200">
-        <div className="flex items-start justify-between mb-4">
+      <div className="p-8 border-b border-slate-200">
+        <div className="flex items-start justify-between mb-6">
           <div>
-            <h3 className="text-lg font-bold text-slate-900 tracking-tight">Cost Trend</h3>
-            <p className="text-sm text-slate-500 font-medium mt-1">Spending & waste analysis</p>
+            <h3 className="text-2xl font-extrabold text-slate-900 tracking-tight">Cost Trend</h3>
+            <p className="text-sm text-slate-600 font-medium mt-2">Spending & waste analysis</p>
           </div>
-          {wasteReduction < 0 && (
-            <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1 rounded-full">
-              <TrendingUp size={16} className="text-emerald-600" />
-              <span className="text-xs font-semibold text-emerald-600">
+          {wasteReduction > 0 && (
+            <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-100/80 to-emerald-50/80 px-4 py-2 rounded-full ring-1 ring-emerald-200/50">
+              <TrendingUp size={18} className="text-emerald-600" />
+              <span className="text-xs font-extrabold text-emerald-700 tracking-tight">
                 ${Math.abs(wasteReduction).toFixed(2)} reduction
               </span>
             </div>
@@ -94,15 +94,15 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
         </div>
 
         {/* Time Period Buttons */}
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           {(['12h', '24h', '7d', '30d'] as const).map((period) => (
             <button
               key={period}
               onClick={() => setTimePeriod(period)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+              className={`px-4 py-2 rounded-lg text-xs font-extrabold transition-all duration-200 tracking-tight ${
                 timePeriod === period
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md shadow-indigo-300/50'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 ring-1 ring-slate-200'
               }`}
             >
               {period === '12h' ? '12h' : period === '24h' ? '24h' : period === '7d' ? '7 days' : '30 days'}
@@ -117,7 +117,7 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         style={{ height: `${height}px` }}
-        className="relative"
+        className="relative bg-gradient-to-b from-slate-50 to-white"
       >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={trendData} margin={{ top: 10, right: 20, left: -10, bottom: 10 }}>
@@ -128,9 +128,10 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
               contentStyle={{
                 backgroundColor: '#1f2937',
                 border: '1px solid #374151',
-                borderRadius: '6px',
+                borderRadius: '8px',
                 color: '#fff',
-                fontSize: '12px'
+                fontSize: '12px',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
               }}
               formatter={(value: any) => `$${value.toFixed(2)}`}
             />
@@ -138,7 +139,7 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
               type="monotone"
               dataKey="spend"
               stroke="#6366f1"
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={false}
               name="Total Spend"
               isAnimationActive={false}
@@ -147,7 +148,7 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
               type="monotone"
               dataKey="waste"
               stroke="#ef4444"
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={false}
               name="Wasted Cost"
               isAnimationActive={false}
@@ -159,8 +160,8 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
       {/* Resize Handle */}
       <div
         onMouseDown={handleMouseDown}
-        className={`h-1 bg-slate-200 hover:bg-indigo-400 cursor-ns-resize transition-colors ${
-          isResizing ? 'bg-indigo-400' : ''
+        className={`h-1.5 bg-gradient-to-r from-slate-200 to-slate-100 hover:from-indigo-400 hover:to-indigo-300 cursor-ns-resize transition-all ${
+          isResizing ? 'from-indigo-500 to-indigo-400' : ''
         }`}
         title="Drag to resize"
       />
