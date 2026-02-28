@@ -1,5 +1,7 @@
+@import url('https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700;900&display=swap');
 @import "tailwindcss";
 
 body {
   background-color: #f3f4f6; /* Светло-серый фон как на картинке */
+  font-family: 'Albert Sans', sans-serif;
 }

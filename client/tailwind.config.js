@@ -5,7 +5,11 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        'albert-sans': ['Albert Sans', 'sans-serif'],
+      },
+    },
   },
   plugins: [],
 }

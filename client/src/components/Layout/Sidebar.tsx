@@ -3,9 +3,10 @@ import { LayoutDashboard, Database, ShieldAlert, Settings, LogOut, Cloud } from 
 interface SidebarProps {
   currentPage?: 'dashboard' | 'resources' | 'security';
   onPageChange?: (page: 'dashboard' | 'resources' | 'security') => void;
+  onLogout?: () => void;
 }
 
-export const Sidebar = ({ currentPage = 'dashboard', onPageChange }: SidebarProps) => {
+export const Sidebar = ({ currentPage = 'dashboard', onPageChange, onLogout }: SidebarProps) => {
   const menuItems = [
     { id: 'dashboard', icon: <LayoutDashboard size={20}/>, label: 'Dashboard' },
     { id: 'resources', icon: <Database size={20}/>, label: 'Resources' },
@@ -42,7 +43,10 @@ export const Sidebar = ({ currentPage = 'dashboard', onPageChange }: SidebarProp
 
       {/* Кнопка выхода */}
       <div className="pt-6 border-t border-gray-100">
-        <div className="flex items-center gap-3 p-3 text-slate-400 hover:text-red-500 cursor-pointer transition-colors">
+        <div 
+          onClick={onLogout}
+          className="flex items-center gap-3 p-3 text-slate-400 hover:text-red-500 cursor-pointer transition-colors"
+        >
           <LogOut size={20}/>
           <span className="font-semibold text-sm">Logout</span>
         </div>

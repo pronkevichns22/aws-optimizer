@@ -6,6 +6,7 @@ import { Chart } from './components/ui/Chart';
 import { ResourcesTable } from './components/ui/ResourcesTable';
 import { ResourcesPage } from './pages/ResourcesPage';
 import { SecurityPage } from './pages/SecurityPage';
+import { LoginPage } from './pages/LoginPage';
 import { CostTrend } from './components/ui/CostTrend';
 import { RefreshCcw, Server, HardDrive, DollarSign, AlertTriangle, Zap, Shield } from 'lucide-react';
 
@@ -13,6 +14,40 @@ function App() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState<'dashboard' | 'resources' | 'security'>('dashboard');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [credentials, setCredentials] = useState<any>(null);
+
+  const handleConnect = async (creds: any) => {
+    try {
+      setLoading(true);
+      setCredentials(creds);
+      
+      // Send credentials to backend
+      const response = await axios.post('http://localhost:5000/api/auth', {
+        accessKeyId: creds.accessKeyId,
+        secretAccessKey: creds.secretAccessKey,
+        region: creds.region,
+        isLocalStack: creds.isLocalStack,
+        endpoint: creds.endpoint
+      });
+      
+      if (response.status === 200) {
+        setIsAuthenticated(true);
+      }
+    } catch (error) {
+      console.error('Authentication error:', error);
+      alert('Failed to connect. Please check your credentials.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setCredentials(null);
+    setData(null);
+    setCurrentPage('dashboard');
+  };
 
   const runAudit = async () => {
     setLoading(true);
@@ -38,10 +73,15 @@ function App() {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-50/50">
+    <>
+      {!isAuthenticated ? (
+        <LoginPage onConnect={handleConnect} />
+      ) : (
+        <div className="flex min-h-screen bg-slate-50/50">
       <Sidebar 
         currentPage={currentPage} 
-        onPageChange={(page) => setCurrentPage(page as 'dashboard' | 'resources' | 'security')} 
+        onPageChange={(page) => setCurrentPage(page as 'dashboard' | 'resources' | 'security')}
+        onLogout={handleLogout}
       />
       
       {currentPage === 'dashboard' ? (
@@ -186,6 +226,8 @@ function App() {
         <SecurityPage data={data} />
       )}
     </div>
+      )}
+    </>
   );
 }
 
