@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Cloud, Eye, EyeOff, ArrowRight } from 'lucide-react';
-import LocalStackIcon from '../assets/LocalStack.svg';
+import { Cloud, Eye, EyeOff, ArrowRight, Settings } from 'lucide-react';
 
 const AWS_REGIONS = [
   'us-east-1',
@@ -287,7 +286,7 @@ export const LoginPage = ({ onConnect }: { onConnect?: (credentials: any) => voi
               style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 600 }}
             >
                 <>
-                    <img src={LocalStackIcon} alt="LocalStack" className="w-5 h-5" />
+                    <Settings className="w-5 h-5" />
                     Connect to LocalStack
                 </>
             </button>

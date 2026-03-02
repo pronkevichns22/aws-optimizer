@@ -75,18 +75,18 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
   };
 
   return (
-    <div className="bg-white rounded-3xl ring-1 ring-slate-900/5 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
+    <div className="bg-[#1f2029] rounded-[20px] border border-[#242732] shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
       {/* Header */}
-      <div className="p-8 border-b border-slate-200">
+      <div className="p-6 border-b border-[#242732]">
         <div className="flex items-start justify-between mb-6">
           <div>
-            <h3 className="text-2xl font-extrabold text-slate-900 tracking-tight">Cost Trend</h3>
-            <p className="text-sm text-slate-600 font-medium mt-2">Spending & waste analysis</p>
+            <h3 className="text-[16px] font-bold text-white tracking-tight" style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 700 }}>Cost Trend</h3>
+            <p className="text-[12px] text-[#818ca2] font-medium mt-1" style={{ fontFamily: "'Albert Sans', sans-serif" }}>Spending & waste analysis</p>
           </div>
           {wasteReduction > 0 && (
-            <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-100/80 to-emerald-50/80 px-4 py-2 rounded-full ring-1 ring-emerald-200/50">
-              <TrendingUp size={18} className="text-emerald-600" />
-              <span className="text-xs font-extrabold text-emerald-700 tracking-tight">
+            <div className="flex items-center gap-2 bg-[#00CC44]/10 px-3 py-1.5 rounded-full">
+              <TrendingUp size={14} className="text-[#00CC44]" />
+              <span className="text-[11px] font-bold text-[#00CC44]" style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 600 }}>
                 ${Math.abs(wasteReduction).toFixed(2)} reduction
               </span>
             </div>
@@ -94,16 +94,17 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
         </div>
 
         {/* Time Period Buttons */}
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           {(['12h', '24h', '7d', '30d'] as const).map((period) => (
             <button
               key={period}
               onClick={() => setTimePeriod(period)}
-              className={`px-4 py-2 rounded-lg text-xs font-extrabold transition-all duration-200 tracking-tight ${
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all duration-200 ${
                 timePeriod === period
-                  ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md shadow-indigo-300/50'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200 ring-1 ring-slate-200'
+                  ? 'bg-[#1a85ff] text-white'
+                  : 'bg-[#242732] text-[#818ca2] hover:bg-[#2a2e3f] hover:text-white'
               }`}
+              style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 600 }}
             >
               {period === '12h' ? '12h' : period === '24h' ? '24h' : period === '7d' ? '7 days' : '30 days'}
             </button>
@@ -117,29 +118,29 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         style={{ height: `${height}px` }}
-        className="relative bg-gradient-to-b from-slate-50 to-white"
+        className="relative bg-[#1f2029]"
       >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={trendData} margin={{ top: 10, right: 20, left: -10, bottom: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="date" stroke="#9ca3af" style={{ fontSize: '11px' }} />
-            <YAxis stroke="#9ca3af" style={{ fontSize: '11px' }} width={35} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#242732" />
+            <XAxis dataKey="date" stroke="#818ca2" style={{ fontSize: '11px' }} />
+            <YAxis stroke="#818ca2" style={{ fontSize: '11px' }} width={35} />
             <Tooltip
               contentStyle={{
-                backgroundColor: '#1f2937',
-                border: '1px solid #374151',
+                backgroundColor: '#242732',
+                border: '1px solid #242732',
                 borderRadius: '8px',
                 color: '#fff',
                 fontSize: '12px',
-                boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+                boxShadow: '0 10px 25px rgba(0,0,0,0.3)'
               }}
               formatter={(value: any) => `$${value.toFixed(2)}`}
             />
             <Line
               type="monotone"
               dataKey="spend"
-              stroke="#6366f1"
-              strokeWidth={2.5}
+              stroke="#FF4444"
+              strokeWidth={2}
               dot={false}
               name="Total Spend"
               isAnimationActive={false}
@@ -147,8 +148,8 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
             <Line
               type="monotone"
               dataKey="waste"
-              stroke="#ef4444"
-              strokeWidth={2.5}
+              stroke="#00CC44"
+              strokeWidth={2}
               dot={false}
               name="Wasted Cost"
               isAnimationActive={false}
@@ -160,8 +161,8 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
       {/* Resize Handle */}
       <div
         onMouseDown={handleMouseDown}
-        className={`h-1.5 bg-gradient-to-r from-slate-200 to-slate-100 hover:from-indigo-400 hover:to-indigo-300 cursor-ns-resize transition-all ${
-          isResizing ? 'from-indigo-500 to-indigo-400' : ''
+        className={`h-1 bg-[#242732] hover:bg-[#1a85ff] cursor-ns-resize transition-all ${
+          isResizing ? 'bg-[#1a85ff]' : ''
         }`}
         title="Drag to resize"
       />
