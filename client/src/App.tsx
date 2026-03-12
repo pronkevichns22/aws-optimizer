@@ -1,39 +1,67 @@
 import { useState } from 'react';
 import axios from 'axios';
-import { Header } from './components/Layout/Header';
-import { Dashboard } from './components/Dashboard';
-import { ResourcesPage } from './pages/ResourcesPage';
+import { Header } from './components/Layout/Header'; 
+import NewResourcesPage from './pages/NewResourcesPage';
 import { SecurityPage } from './pages/SecurityPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
+import NewDashboard from './pages/NewDashboard';
 
 function App() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState<'dashboard' | 'resources' | 'security' | 'settings'>('dashboard');
-  const [isAuthenticated, setIsAuthenticated] = useState(true); // Set to true to skip login
+  const [isAuthenticated, setIsAuthenticated] = useState(false); 
   const [credentials, setCredentials] = useState<any>(null);
 
+  // Функция для подключения с использованием credentials
   const handleConnect = async (creds: any) => {
     try {
       setLoading(true);
       setCredentials(creds);
       
-      // Send credentials to backend
-      const response = await axios.post('http://localhost:5000/api/auth', {
+      // Выполняем сканирование сразу после подключения
+      const scanResponse = await axios.post('http://localhost:5000/api/scan', {
         accessKeyId: creds.accessKeyId,
         secretAccessKey: creds.secretAccessKey,
-        region: creds.region,
-        isLocalStack: creds.isLocalStack,
-        endpoint: creds.endpoint
+        region: creds.region || 'us-east-1',
+        isLocalStack: creds.isLocalStack || false,
+        endpoint: creds.endpoint || 'http://localhost:4566'
       });
-      
-      if (response.status === 200) {
+
+      if (scanResponse.status === 200) {
+        setData(scanResponse.data);
         setIsAuthenticated(true);
       }
-    } catch (error) {
-      console.error('Authentication error:', error);
-      alert('Failed to connect. Please check your credentials.');
+    } catch (error: any) {
+      console.error('Error connecting:', error);
+      alert(`Ошибка подключения: ${error.response?.data?.message || error.message}`);
+      setIsAuthenticated(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Функция для переповтора сканирования
+  const handleRescan = async () => {
+    if (!credentials) return;
+    
+    try {
+      setLoading(true);
+      const scanResponse = await axios.post('http://localhost:5000/api/scan', {
+        accessKeyId: credentials.accessKeyId,
+        secretAccessKey: credentials.secretAccessKey,
+        region: credentials.region || 'us-east-1',
+        isLocalStack: credentials.isLocalStack || false,
+        endpoint: credentials.endpoint || 'http://localhost:4566'
+      });
+
+      if (scanResponse.status === 200) {
+        setData(scanResponse.data);
+      }
+    } catch (error: any) {
+      console.error('Error rescanning:', error);
+      alert(`Ошибка при переповторе сканирования: ${error.response?.data?.message || error.message}`);
     } finally {
       setLoading(false);
     }
@@ -51,19 +79,25 @@ function App() {
       {!isAuthenticated ? (
         <LoginPage onConnect={handleConnect} />
       ) : (
-        <div className="flex flex-col min-h-screen bg-[#13141b]">
+        <div className="min-h-screen bg-[#0B0C10] flex flex-col relative z-0">
+          
           <Header 
             currentPage={currentPage}
             onPageChange={setCurrentPage}
             onLogout={handleLogout}
           />
-          
-          <div className="pt-32">
-            {currentPage === 'dashboard' && <Dashboard data={data} loading={loading} />}
-            {currentPage === 'resources' && <ResourcesPage data={data} />}
+
+          {/* Тот самый прямоугольник на заднем фоне (265px высотой, цвет #181921) */}
+          <div className="absolute top-0 left-0 w-full h-[300px] bg-[#181921] -z-10 pointer-events-none" />
+
+          {/* Увеличенный отступ, чтобы было больше места между Хедером и контентом */}
+          <div className="pt-[160px] flex-1 z-10">
+            {currentPage === 'dashboard' && <NewDashboard loading={loading} data={data} onRescan={handleRescan} />}
+            {currentPage === 'resources' && <NewResourcesPage data={data} />}
             {currentPage === 'security' && <SecurityPage data={data} />}
             {currentPage === 'settings' && <SettingsPage data={data} />}
           </div>
+          
         </div>
       )}
     </>

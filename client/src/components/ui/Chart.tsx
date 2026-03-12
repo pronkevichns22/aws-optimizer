@@ -1,5 +1,4 @@
-import React from 'react';
-import { BarChart, LineChart, TrendingUp } from 'lucide-react';
+import { BarChart, LineChart } from 'lucide-react';
 
 interface ChartProps {
   title: string;

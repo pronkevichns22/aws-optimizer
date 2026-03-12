@@ -1,4 +1,3 @@
-import React from 'react';
 import jsPDF from 'jspdf';
 import { Download, FileText } from 'lucide-react';
 
@@ -60,7 +59,7 @@ export const PDFReport = ({ data }: PDFReportProps) => {
       ['Unused Resources', `${data.summary.wasteCount}`]
     ];
 
-    metrics.forEach((metric, i) => {
+    metrics.forEach((metric, _i) => {
       doc.text(metric[0], margin, y);
       doc.text(metric[1], pageWidth - margin - 30, y, { align: 'right' });
       y += 7;
