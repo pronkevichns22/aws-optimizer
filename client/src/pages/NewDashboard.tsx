@@ -9,20 +9,6 @@ interface DashboardProps {
   onRescan?: () => void;
 }
 
-const metricsData = [
-  { title: "Potential Savings", value: "$340.50", changePercent: "+2.5%", changeType: "positive" as const },
-  { title: "Total Monthly Spend", value: "$4,520.00", changePercent: "+2.5%", changeType: "positive" as const },
-  { title: "Security Level", value: "12", changePercent: "-3.25", changeType: "negative" as const },
-  { title: "Wasted Resources", value: "124", changePercent: "+15%", changeType: "negative" as const },
-];
-
-const serviceBreakdownData = [
-  { name: "EC2", value: 60, color: "#B648FF" },
-  { name: "RDS", value: 25, color: "#1A85FF" },
-  { name: "S3", value: 10, color: "#EF4444" },
-  { name: "Other", value: 5, color: "#818CA2" },
-];
-
 const MetricCard = ({ title, value, changePercent, changeType, showDivider }: any) => {
     const isPositive = changeType === "positive";
     const textColor = isPositive ? "#10B981" : "#EF4444"; 
@@ -46,6 +32,27 @@ const MetricCard = ({ title, value, changePercent, changeType, showDivider }: an
 };
 
 const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan }) => {
+  // Подготавливаем данные для диаграммы из ресурсов
+  const serviceBreakdownData = (() => {
+    const breakdown: { [key: string]: number } = {};
+    const resources = data?.summary?.resources || [];
+    
+    resources.forEach((r: any) => {
+      const type = r.type || 'Other';
+      breakdown[type] = (breakdown[type] || 0) + 1;
+    });
+
+    const colors = ["#B648FF", "#1A85FF", "#EF4444", "#14B8A6", "#FF9F43", "#00D084", "#479DFF", "#818CA2"];
+    let colorIndex = 0;
+
+    return Object.entries(breakdown)
+      .map(([name, value]) => ({
+        name,
+        value,
+        color: colors[colorIndex++ % colors.length]
+      }))
+      .slice(0, 4);
+  })();
   return (
     <div className="flex justify-center px-[60px] pb-10 relative">
 
@@ -93,8 +100,8 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan }) => 
         <main className="flex-1 flex flex-col">
           
           <div className="h-[36px] flex items-center mb-9"> 
-              <div className="group bg-[#181921] border border-[#242732] rounded-[16px] px-5 py-3 flex items-center gap-4 w-full max-w-[500px] focus-within:border-[#47B2FF] hover:border-[#47B2FF]/70 transition-all shadow-lg hover:shadow-[0_0_12px_rgba(71,178,255,0.15)]">
-                <Search size={24} className="text-[#818CA2] group-hover:text-[#47B2FF] transition-colors" />
+              <div className="group bg-[#181921] border border-[#242732] rounded-[16px] px-5 py-3 flex items-center gap-4 w-full max-w-[500px] focus-within:border-[#47B2FF] hover:border-[#47B2FF]/70 transition-all shadow-lg">
+                <Search size={24} className="text-[#818CA2]" />
                 <input 
                     type="text" 
                     placeholder="Search resources by ID or tag..." 
@@ -104,41 +111,53 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan }) => 
           </div>
 
           <section className="flex h-[140px] items-center bg-[#13141b] rounded-[16px] border border-[#242732] px-6 shadow-lg mb-3">
-            {[
-              { 
-                title: "Total Spend", 
-                value: data?.summary?.totalSpend ? `$${data.summary.totalSpend.toFixed(2)}` : "$0.00",
-                changePercent: "+2.5%",
-                changeType: "positive"
-              },
-              { 
-                title: "Total Waste", 
-                value: data?.summary?.totalWaste ? `$${data.summary.totalWaste.toFixed(2)}` : "$0.00",
-                changePercent: "+5%",
-                changeType: "negative"
-              },
-              { 
-                title: "Resources Count", 
-                value: data?.summary?.serverCount ? data.summary.serverCount : "0",
-                changePercent: "0%",
-                changeType: "positive"
-              },
-              { 
-                title: "Wasted Resources", 
-                value: data?.summary?.wasteCount ? data.summary.wasteCount : "0",
-                changePercent: "+15%",
-                changeType: "negative"
-              }
-            ].map((metric, index) => (
-                <MetricCard
-                  key={metric.title}
-                  title={metric.title}
-                  value={metric.value}
-                  changePercent={metric.changePercent}
-                  changeType={metric.changeType}
-                  showDivider={index < 3}
-                />
-              ))}
+            {(() => {
+              const totalSpend = data?.summary?.totalSpend || 0;
+              const totalWaste = data?.summary?.totalWaste || 0;
+              const wasteCount = data?.summary?.wasteCount || 0;
+              const totalResources = data?.summary?.resources?.length || 0;
+              
+              const wastePercentNum = totalSpend > 0 ? (totalWaste / totalSpend) * 100 : 0;
+              const wastePercent = wastePercentNum.toFixed(1);
+              const resourcesPercentNum = totalResources > 0 ? (wasteCount / totalResources) * 100 : 0;
+              const resourcesPercent = resourcesPercentNum.toFixed(1);
+
+              return [
+                { 
+                  title: "Total Spend", 
+                  value: totalSpend ? `$${totalSpend.toFixed(2)}` : "$0.00",
+                  changePercent: `${wastePercent}%`,
+                  changeType: wastePercentNum > 0 ? "negative" : "positive"
+                },
+                { 
+                  title: "Total Waste", 
+                  value: totalWaste ? `$${totalWaste.toFixed(2)}` : "$0.00",
+                  changePercent: `${wastePercent}%`,
+                  changeType: "negative"
+                },
+                { 
+                  title: "Resources Count", 
+                  value: totalResources.toString(),
+                  changePercent: totalResources > 0 ? totalResources.toString() : "0",
+                  changeType: "positive"
+                },
+                { 
+                  title: "Wasted Resources", 
+                  value: wasteCount.toString(),
+                  changePercent: `${resourcesPercent}%`,
+                  changeType: wasteCount > 0 ? "negative" : "positive"
+                }
+              ].map((metric, index) => (
+                  <MetricCard
+                    key={metric.title}
+                    title={metric.title}
+                    value={metric.value}
+                    changePercent={metric.changePercent}
+                    changeType={metric.changeType}
+                    showDivider={index < 3}
+                  />
+                ));
+            })()}
           </section>
 
           {/* Графики */}
@@ -149,9 +168,22 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan }) => 
                     <h3 className="text-2xl font-black mb-1 text-white">Cost Trend</h3>
                     <p className="text-[#818CA2] text-sm font-medium">Last 7 days spending analysis</p>
                   </div>
-                  <div className="flex items-center gap-2 font-bold text-sm px-3 py-1 rounded-lg border" style={{ color: "#10B981", backgroundColor: "rgba(16, 185, 129, 0.1)", borderColor: "rgba(16, 185, 129, 0.2)" }}>
-                    <Radar size={14} /> +5.2%
-                  </div>
+                  {(() => {
+                    const totalSpend = data?.summary?.totalSpend || 0;
+                    const totalWaste = data?.summary?.totalWaste || 0;
+                    const wastePercent = totalSpend > 0 ? ((totalWaste / totalSpend) * 100).toFixed(1) : 0;
+                    const isPositive = parseFloat(String(wastePercent)) < 5;
+                    
+                    return (
+                      <div className="flex items-center gap-2 font-bold text-sm px-3 py-1 rounded-lg border" style={{ 
+                        color: isPositive ? "#10B981" : "#EF4444", 
+                        backgroundColor: isPositive ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)", 
+                        borderColor: isPositive ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)" 
+                      }}>
+                        <Radar size={14} /> {wastePercent}%
+                      </div>
+                    );
+                  })()}
                </div>
               <div className="flex-1 border-2 border-dashed border-[#242732] rounded-2xl flex items-center justify-center opacity-20 font-bold uppercase tracking-widest text-xs text-white">
                 {loading ? 'Loading...' : 'Chart Area'}

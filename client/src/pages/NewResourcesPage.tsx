@@ -7,22 +7,6 @@ interface ResourcesPageProps {
   data?: any;
 }
 
-const resourceStatsData = [
-  { title: "Total Resources", value: "248", changePercent: "+12", changeType: "positive" as const },
-  { title: "Active Resources", value: "184", changePercent: "+8.5%", changeType: "positive" as const },
-  { title: "Idle Resources", value: "45", changePercent: "+22%", changeType: "negative" as const },
-  { title: "Total Cost/Month", value: "$2,847.50", changePercent: "-4.2%", changeType: "positive" as const },
-];
-
-const resourcesData = [
-  { id: 'vol-0a1b2c3d4e5f6', type: 'EBS Volume', size: '100 GB', status: 'Active', cost: '$45.00' },
-  { id: 'snap-3n4o5pq6r7s8', type: 'Snapshot', size: '26 GB', status: 'Archived', cost: '$12.40' },
-  { id: 'eipalloc-7h8i9j0kl1m2n', type: 'Elastic IP', size: '1 IP', status: 'Active', cost: '$0.00' },
-  { id: 'vol-9x8y7z6a5b4c3d', type: 'EBS Volume', size: '500 GB', status: 'Active', cost: '$120.00' },
-  { id: 'rds-prod-db-01', type: 'RDS Instance', size: '1 TB', status: 'Active', cost: '$285.60' },
-  { id: 's3-backup-bucket', type: 'S3 Bucket', size: '2.5 TB', status: 'Active', cost: '$58.20' },
-];
-
 const StatCard = ({ title, value, changePercent, changeType, showDivider }: any) => {
     const isPositive = changeType === "positive";
     const textColor = isPositive ? "#10B981" : "#EF4444"; 
@@ -51,11 +35,32 @@ const getTypeStyle = (type: string) => {
       case 'Snapshot': return "bg-[#2B413F] text-[#14B8A6] border border-[#14B8A6]/30";
       case 'RDS Instance': return "bg-[#3F312B] text-[#FF9F43] border border-[#FF9F43]/30";
       case 'S3 Bucket': return "bg-[#2B3F3D] text-[#00D084] border border-[#00D084]/30";
+      case 'EC2 Instance': return "bg-[#36273F] text-[#B548FF] border border-[#B548FF]/30";
       default: return "bg-[#242638] text-[#479DFF] border border-[#479DFF]/30";
     }
   };
 
-const NewResourcesPage: React.FC<ResourcesPageProps> = () => {
+const NewResourcesPage: React.FC<ResourcesPageProps> = ({ loading, data }) => {
+  // Получаем реальные ресурсы из данных или используем пустой массив
+  const resources = data?.summary?.resources || [];
+  
+  // Вычисляем статистику на основе реальных данных
+  const resourceStats = {
+    total: resources.length,
+    active: resources.filter((r: any) => r.status === 'Active' || r.status === 'running').length,
+    idle: resources.filter((r: any) => r.status === 'Idle' || r.status === 'stopped').length,
+    totalCost: resources.reduce((sum: number, r: any) => {
+      const cost = typeof r.cost === 'string' ? parseFloat(r.cost.replace(/[^0-9.]/g, '')) : (r.cost || 0);
+      return sum + cost;
+    }, 0)
+  };
+
+  const resourceStatsData = [
+    { title: "Total Resources", value: resourceStats.total.toString(), changePercent: "+0", changeType: "positive" as const },
+    { title: "Active Resources", value: resourceStats.active.toString(), changePercent: `+${resourceStats.active}`, changeType: "positive" as const },
+    { title: "Idle Resources", value: resourceStats.idle.toString(), changePercent: `+${resourceStats.idle}`, changeType: resourceStats.idle > 0 ? "negative" as const : "positive" as const },
+    { title: "Total Cost/Month", value: `$${resourceStats.totalCost.toFixed(2)}`, changePercent: "-0%", changeType: "positive" as const },
+  ];
   return (
     <div className="flex justify-center px-[60px] pb-10 relative">
       <div className="w-full max-w-[1600px] flex gap-12 items-start z-10">
@@ -91,8 +96,8 @@ const NewResourcesPage: React.FC<ResourcesPageProps> = () => {
         <main className="flex-1 flex flex-col">
           
           <div className="h-[36px] flex items-center mb-9"> 
-              <div className="group bg-[#181921] border border-[#242732] rounded-[16px] px-5 py-3 flex items-center gap-4 w-full max-w-[500px] focus-within:border-[#47B2FF] hover:border-[#47B2FF]/70 transition-all shadow-lg hover:shadow-[0_0_12px_rgba(71,178,255,0.15)]">
-                <Search size={24} className="text-[#818CA2] group-hover:text-[#47B2FF] transition-colors" />
+              <div className="group bg-[#181921] border border-[#242732] rounded-[16px] px-5 py-3 flex items-center gap-4 w-full max-w-[500px] focus-within:border-[#47B2FF] hover:border-[#47B2FF]/70 transition-all shadow-lg">
+                <Search size={24} className="text-[#818CA2]" />
                 <input 
                     type="text" 
                     placeholder="Search resources by ID or type..." 
@@ -130,26 +135,34 @@ const NewResourcesPage: React.FC<ResourcesPageProps> = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {resourcesData.map((resource, i) => (
-                            <tr key={i} className="border-b border-[#242732] hover:bg-[#1f2029] transition-colors">
-                              <td className="py-4 px-2 text-left">
-                                <span className="px-3 py-1 rounded-full text-sm font-mono border border-[#479DFF]/40 bg-[#2F334B] text-[#479DFF]">{resource.id}</span>
-                              </td>
-                              <td className="py-4 px-4 text-center">
-                                <span className={`px-3 py-1 rounded-full text-xs font-medium ${getTypeStyle(resource.type)} uppercase`}>{resource.type}</span>
-                              </td>
-                              <td className="py-4 px-4 text-center text-gray-300 font-medium">{resource.size}</td>
-                              <td className="py-4 px-4 text-center">
-                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${resource.status === 'Active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-gray-500/10 text-gray-400'}`}>
-                                  {resource.status}
-                                </span>
-                              </td>
-                              <td className="py-4 px-4 text-center font-semibold text-[#EF4444]">{resource.cost}</td>
-                              <td className="py-4 px-4 text-center">
-                                <button className="text-gray-400 hover:text-white transition-colors p-1"><Trash2 size={16}/></button>
+                          {resources.length > 0 ? (
+                            resources.map((resource: any, i: number) => (
+                              <tr key={i} className="border-b border-[#242732] hover:bg-[#1f2029] transition-colors">
+                                <td className="py-4 px-2 text-left">
+                                  <span className="px-3 py-1 rounded-full text-sm font-mono border border-[#479DFF]/40 bg-[#2F334B] text-[#479DFF]">{resource.id}</span>
+                                </td>
+                                <td className="py-4 px-4 text-center">
+                                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${getTypeStyle(resource.type)} uppercase`}>{resource.type}</span>
+                                </td>
+                                <td className="py-4 px-4 text-center text-gray-300 font-medium">{resource.size || 'N/A'}</td>
+                                <td className="py-4 px-4 text-center">
+                                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${(['Active', 'running'].includes(resource.status)) ? 'bg-emerald-500/10 text-emerald-500' : 'bg-gray-500/10 text-gray-400'}`}>
+                                    {resource.status}
+                                  </span>
+                                </td>
+                                <td className="py-4 px-4 text-center font-semibold text-[#EF4444]">${typeof resource.cost === 'string' ? resource.cost.replace(/[^0-9.]/g, '') : resource.cost?.toFixed(2) || '0.00'}</td>
+                                <td className="py-4 px-4 text-center">
+                                  <button className="text-gray-400 hover:text-white transition-colors p-1"><Trash2 size={16}/></button>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={6} className="py-8 text-center text-gray-400">
+                                {loading ? 'Loading resources...' : 'No resources found. Please scan your AWS account.'}
                               </td>
                             </tr>
-                          ))}
+                          )}
                         </tbody>
                     </table>
                 </div>
