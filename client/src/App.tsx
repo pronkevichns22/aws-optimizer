@@ -8,11 +8,18 @@ import { LoginPage } from './pages/LoginPage';
 import NewDashboard from './pages/NewDashboard';
 
 function App() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>({
+    summary: {
+      totalSpend: 0,
+      totalWaste: 0,
+      wasteCount: 0,
+      resources: []
+    }
+  });
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState<'dashboard' | 'resources' | 'security' | 'settings'>('dashboard');
-  const [isAuthenticated, setIsAuthenticated] = useState(false); 
-  const [credentials, setCredentials] = useState<any>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(true); 
+  const [credentials, setCredentials] = useState<any>({});
 
   // Функция для подключения с использованием credentials
   const handleConnect = async (creds: any) => {
