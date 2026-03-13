@@ -205,7 +205,17 @@ app.post('/api/scan', async (req, res) => {
     try {
         const { accessKeyId, secretAccessKey, region, isLocalStack, endpoint } = req.body;
 
+        console.log('📨 /api/scan request received');
+        console.log('Request body:', {
+            accessKeyId: accessKeyId ? '✓ provided' : '✗ missing',
+            secretAccessKey: secretAccessKey ? '✓ provided' : '✗ missing',
+            region,
+            isLocalStack,
+            endpoint
+        });
+
         if (!accessKeyId || !secretAccessKey) {
+            console.error('❌ Missing credentials');
             return res.status(400).json({ error: 'Требуются AWS credentials' });
         }
 

@@ -72,10 +72,18 @@ export const LoginPage = ({ onConnect }: { onConnect?: (credentials: any) => voi
   };
 
   const handleConnect = async () => {
+    if (!credentials.accessKeyId || !credentials.secretAccessKey) {
+      alert('Please enter both Access Key ID and Secret Access Key');
+      return;
+    }
+
     setLoading(true);
     try {
+      console.log('☁️ AWS connection attempt with:', credentials);
+      
       if (onConnect) {
         await onConnect(credentials);
+        console.log('✅ AWS connection callback completed');
       } else {
         console.log('Connecting with:', credentials);
       }
@@ -89,12 +97,22 @@ export const LoginPage = ({ onConnect }: { onConnect?: (credentials: any) => voi
   const handleLocalStackConnect = async () => {
     setLoading(true);
     try {
+      const localstackEndpoint = import.meta.env.VITE_LOCALSTACK_ENDPOINT || 'http://localhost:4566';
+      
+      // LocalStack использует дефолтные test credentials
+      const localstackCreds = {
+        accessKeyId: credentials.accessKeyId?.trim() || 'test',
+        secretAccessKey: credentials.secretAccessKey?.trim() || 'test',
+        region: credentials.region || 'us-east-1',
+        isLocalStack: true,
+        endpoint: localstackEndpoint
+      };
+      
+      console.log('🐳 LocalStack connection attempt with:', localstackCreds);
+      
       if (onConnect) {
-        await onConnect({
-          ...credentials,
-          isLocalStack: true,
-          endpoint: 'http://localhost:4566'
-        });
+        await onConnect(localstackCreds);
+        console.log('✅ LocalStack connection callback completed');
       }
     } catch (error) {
       console.error('LocalStack connection error:', error);

@@ -37,61 +37,65 @@ export const Header = ({ currentPage, onPageChange, onLogout }: HeaderProps) => 
 
   return (
     <header 
-      className="fixed top-0 left-0 right-0 z-50 transition-transform duration-300 ease-in-out bg-[#181921]"
+      className="fixed top-0 left-0 right-0 z-50 transition-transform duration-300 ease-in-out"
       style={{ transform: scrolled ? 'translateY(-73px)' : 'translateY(0)' }}
     >
-      <div className="px-[135px] py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 bg-[#1a85ff] rounded-lg flex items-center justify-center shadow-lg shadow-[#1a85ff]/20">
-            <Cloud className="w-7 h-7 text-white"/>
-          </div>
-          <span className="text-white font-bold text-lg font-['Albert_Sans']">
-            CloudOpti
-          </span>
-        </div>
-        <button
-          onClick={onLogout}
-          className="flex items-center gap-2 px-4 py-2 text-[#818ca2] hover:text-red-400 transition-colors font-['Albert_Sans'] text-[12px] font-bold"
-        >
-          <LogOut className="w-4 h-4" />
-          Logout
-        </button>
-      </div>
-
-      <div className="px-[135px] py-2 flex items-center gap-6 pb-2">
-        {navItems.map(item => {
-          const isActive = currentPage === item.id;
-          const isHovered = hoveredItem === item.id;
-          
-          return (
-            <button
-              key={item.id}
-              onClick={() => onPageChange(item.id as any)}
-              onMouseEnter={() => setHoveredItem(item.id)}
-              onMouseLeave={() => setHoveredItem(null)}
-              className="py-2 flex items-center gap-1 font-['Albert_Sans'] transition-all"
-            >
-              <div 
-                className="w-4 h-4 flex-shrink-0 overflow-hidden"
-                style={{
-                  width: (isActive || isHovered) ? 16 : 0,
-                  opacity: (isActive || isHovered) ? 1 : 0,
-                  transform: (isActive || isHovered) ? 'translateY(0)' : 'translateY(4px)',
-                  transition: 'all 150ms cubic-bezier(0.4, 0, 0.2, 1)',
-                  marginRight: (isActive || isHovered) ? 4 : 0
-                }}
-              >
-                <item.icon />
+      <div className="flex justify-center px-[60px] bg-[#181921]">
+        <div className="w-full max-w-[1600px]">
+          <div className="py-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 bg-[#1a85ff] rounded-lg flex items-center justify-center shadow-lg shadow-[#1a85ff]/20">
+                <Cloud className="w-7 h-7 text-white"/>
               </div>
-              <span
-                className="text-[12px] font-bold tracking-wide"
-                style={{ color: isActive || isHovered ? 'white' : '#818ca2' }}
-              >
-                {item.label}
+              <span className="text-white font-bold text-lg font-['Albert_Sans']">
+                CloudOpti
               </span>
+            </div>
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-2 px-4 py-2 text-[#818ca2] hover:text-red-400 transition-colors font-['Albert_Sans'] text-[12px] font-bold"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
             </button>
-          );
-        })}
+          </div>
+
+          <div className="border-t border-[#242732] py-2 flex items-center gap-6 pb-2">
+            {navItems.map(item => {
+              const isActive = currentPage === item.id;
+              const isHovered = hoveredItem === item.id;
+              
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => onPageChange(item.id as any)}
+                  onMouseEnter={() => setHoveredItem(item.id)}
+                  onMouseLeave={() => setHoveredItem(null)}
+                  className="py-2 flex items-center gap-1 font-['Albert_Sans'] transition-all"
+                >
+                  <div 
+                    className="w-4 h-4 flex-shrink-0 overflow-hidden"
+                    style={{
+                      width: (isActive || isHovered) ? 16 : 0,
+                      opacity: (isActive || isHovered) ? 1 : 0,
+                      transform: (isActive || isHovered) ? 'translateY(0)' : 'translateY(4px)',
+                      transition: 'all 150ms cubic-bezier(0.4, 0, 0.2, 1)',
+                      marginRight: (isActive || isHovered) ? 4 : 0
+                    }}
+                  >
+                    <item.icon />
+                  </div>
+                  <span
+                    className="text-[12px] font-bold tracking-wide"
+                    style={{ color: isActive || isHovered ? 'white' : '#818ca2' }}
+                  >
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </header>
   );
