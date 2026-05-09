@@ -1,3 +1,9 @@
+// ============================================================================
+// FILE: tailwind.config.js
+// LOCATION: client/
+// PURPOSE: Tailwind CSS configuration with custom theme extensions
+// ============================================================================
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [

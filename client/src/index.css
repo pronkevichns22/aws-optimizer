@@ -1,3 +1,9 @@
+/* ========================================================================== */
+/* FILE: index.css */
+/* LOCATION: client/src/ */
+/* PURPOSE: Global styles, fonts, and CSS variables for the entire app */
+/* ========================================================================== */
+
 @import url('https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700;900&display=swap');
 @import "tailwindcss";
 

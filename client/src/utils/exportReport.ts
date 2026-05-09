@@ -1,5 +1,10 @@
-// exportUtils.ts (или как называется твой файл)
+// ============================================================================
+// FILE: exportReport.ts
+// LOCATION: client/src/utils/
+// PURPOSE: Utility functions for exporting and downloading reports
+// ============================================================================
 
+// ========== Type definitions for report exports ==========
 interface ExportResource {
   id: string;
   type: string;

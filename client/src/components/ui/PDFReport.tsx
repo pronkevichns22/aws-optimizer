@@ -1,6 +1,13 @@
+// ============================================================================
+// FILE: PDFReport.tsx
+// LOCATION: client/src/components/ui/
+// PURPOSE: Component for generating and downloading PDF reports of the analysis
+// ============================================================================
+
 import jsPDF from 'jspdf';
 import { Download, FileText } from 'lucide-react';
 
+// ========== Props for PDFReport component ==========
 interface PDFReportProps {
   data?: any;
 }

@@ -1,5 +1,12 @@
+// ============================================================================
+// FILE: HealthScore.tsx
+// LOCATION: client/src/components/ui/
+// PURPOSE: Component for displaying AWS infrastructure health score
+// ============================================================================
+
 import { AlertCircle, CheckCircle, TrendingUp } from 'lucide-react';
 
+// ========== Props for HealthScore component ==========
 interface HealthScoreProps {
   totalSpend: number;
   totalWaste: number;

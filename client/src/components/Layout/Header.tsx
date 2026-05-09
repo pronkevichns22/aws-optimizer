@@ -1,6 +1,13 @@
+// ============================================================================
+// FILE: Header.tsx
+// LOCATION: client/src/components/Layout/
+// PURPOSE: Top navigation header with page navigation and logout button
+// ============================================================================
+
 import { LogOut, LayoutDashboard, Boxes, ShieldHalf, Settings, Cloud } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
+// ========== Props for Header component ==========
 interface HeaderProps {
   currentPage: 'dashboard' | 'resources' | 'security' | 'settings';
   onPageChange: (page: 'dashboard' | 'resources' | 'security' | 'settings') => void;

@@ -1,6 +1,13 @@
+// ============================================================================
+// FILE: DashboardMetrics.tsx
+// LOCATION: client/src/components/ui/
+// PURPOSE: Component for displaying main dashboard metrics
+// ============================================================================
+
 import React from 'react';
 
-// 1. Типизируем данные для карточки
+// ========== Type definition for metric items ==========
+// 1. Define data structure for dashboard metrics
 interface MetricItem {
   id: string;
   title: string;

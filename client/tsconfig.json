@@ -1,3 +1,9 @@
+// ============================================================================
+// FILE: tsconfig.json
+// LOCATION: client/
+// PURPOSE: TypeScript configuration root file that references app and node configs
+// ============================================================================
+
 {
   "files": [],
   "references": [

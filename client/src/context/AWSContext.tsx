@@ -1,5 +1,12 @@
+// ============================================================================
+// FILE: AWSContext.tsx
+// LOCATION: client/src/context/
+// PURPOSE: React context for managing AWS credentials state across app
+// ============================================================================
+
 import React, { createContext, useContext, useState, type ReactNode } from 'react';
 
+// ========== AWS Credentials type definition ==========
 export interface AWSCredentials {
   accessKeyId: string;
   secretAccessKey: string;
@@ -7,6 +14,7 @@ export interface AWSCredentials {
   isLocalStack: boolean;
 }
 
+// ========== Context state type definition ==========
 interface AWSContextType {
   credentials: AWSCredentials | null;
   setCredentials: (creds: AWSCredentials) => void;

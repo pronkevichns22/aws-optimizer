@@ -1,7 +1,14 @@
+// ============================================================================
+// FILE: CostTrend.tsx
+// LOCATION: client/src/components/ui/
+// PURPOSE: Component for displaying cost trends over time with time period filters
+// ============================================================================
+
 import { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { TrendingUp } from 'lucide-react';
 
+// ========== Props for CostTrend component ==========
 interface CostTrendProps {
   data?: any;
   auditHistory?: any[];

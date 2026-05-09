@@ -1,5 +1,12 @@
+// ============================================================================
+// FILE: Sidebar.tsx
+// LOCATION: client/src/components/Layout/
+// PURPOSE: Side navigation menu for app pages and logout
+// ============================================================================
+
 import { LayoutDashboard, Database, ShieldAlert, Settings, LogOut, Cloud } from 'lucide-react';
 
+// ========== Props for Sidebar component ==========
 interface SidebarProps {
   currentPage?: 'dashboard' | 'resources' | 'security';
   onPageChange?: (page: 'dashboard' | 'resources' | 'security') => void;

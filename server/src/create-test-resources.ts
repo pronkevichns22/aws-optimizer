@@ -1,3 +1,9 @@
+// ============================================================================
+// FILE: create-test-resources.ts
+// LOCATION: server/src/
+// PURPOSE: Utility script for creating test AWS resources in LocalStack
+// ============================================================================
+
 import dotenv from 'dotenv';
 import {
   EC2Client,
@@ -7,8 +13,10 @@ import {
   DescribeVolumesCommand,
 } from '@aws-sdk/client-ec2';
 
+// Load environment variables
 dotenv.config();
 
+// ========== Initialize LocalStack EC2 client ==========
 const ec2 = new EC2Client({
   region: process.env.AWS_REGION || 'us-east-1',
   endpoint: process.env.AWS_ENDPOINT || 'http://127.0.0.1:4566',

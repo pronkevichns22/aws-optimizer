@@ -1,6 +1,13 @@
+// ============================================================================
+// FILE: LoginPage.tsx
+// LOCATION: client/src/pages/
+// PURPOSE: AWS authentication page for entering credentials
+// ============================================================================
+
 import { useState, useEffect, useRef } from 'react';
 import { Cloud, Eye, EyeOff, ArrowRight, Settings } from 'lucide-react';
 
+// ========== List of AWS regions available for connection ==========
 const AWS_REGIONS = [
   'us-east-1',
   'us-east-2',

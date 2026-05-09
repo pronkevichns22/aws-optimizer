@@ -1,5 +1,12 @@
+// ============================================================================
+// FILE: SummaryCard.tsx
+// LOCATION: client/src/components/ui/
+// PURPOSE: Summary card showing total spend, waste, and resource count
+// ============================================================================
+
 import { TrendingUp, TrendingDown, Percent } from 'lucide-react';
 
+// ========== Props for SummaryCard component ==========
 interface SummaryProps {
   totalSpend: number;
   totalWaste: number;

@@ -1,5 +1,12 @@
+// ============================================================================
+// FILE: Chart.tsx
+// LOCATION: client/src/components/ui/
+// PURPOSE: Generic chart component for bar and line charts
+// ============================================================================
+
 import { BarChart, LineChart } from 'lucide-react';
 
+// ========== Props for Chart component ==========
 interface ChartProps {
   title: string;
   data: { label: string; value: number }[];

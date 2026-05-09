@@ -1,5 +1,12 @@
+// ============================================================================
+// FILE: ResourcesTable.tsx
+// LOCATION: client/src/components/ui/
+// PURPOSE: Component for displaying AWS resources in table format
+// ============================================================================
+
 import { Trash2, AlertCircle } from 'lucide-react';
 
+// ========== Type definition for resource items ==========
 interface Resource {
   id: string;
   type: string;

@@ -1,30 +1,67 @@
+// ============================================================================
+// FILE: StatCard.tsx
+// LOCATION: client/src/components/ui/
+// PURPOSE: Reusable KPI card component showing metric with title, value, and trend
+// ============================================================================
+
 import React from 'react';
 
-interface Props {
+// ========== Props for StatCard component ==========
+interface StatCardProps {
   title: string;
   value: string | number;
   icon: React.ReactNode;
-  trend: string;
-  isMain?: boolean; // Если true — карточка будет темной и акцентной
+  trend?: string;
+  trendColor?: 'positive' | 'negative' | 'neutral';
+  maxWidth?: string;
 }
 
-export const StatCard = ({ title, value, icon, trend, isMain }: Props) => {
+export const StatCard = ({ 
+  title, 
+  value, 
+  icon, 
+  trend,
+  trendColor = 'neutral',
+  maxWidth = 'w-full'
+}: StatCardProps) => {
+  const trendColorClass = {
+    positive: 'text-green-400',
+    negative: 'text-red-400',
+    neutral: 'text-[#818ca2]'
+  }[trendColor];
+
   return (
-    <div className={`${isMain ? 'bg-slate-900 text-white shadow-xl shadow-slate-200' : 'bg-white text-slate-900 shadow-sm'} p-6 rounded-[2.5rem] border border-gray-100 flex flex-col justify-between transition-transform hover:scale-[1.02] duration-300`}>
-      <div className="flex justify-between items-start">
-        <div>
-          <p className={`text-xs font-bold uppercase tracking-wider ${isMain ? 'text-slate-400' : 'text-slate-500'}`}>{title}</p>
-          <h3 className="text-3xl font-black mt-2 tracking-tight">{value}</h3>
+    <div className={`${maxWidth} bg-[#181921] border border-[#242732] rounded-2xl p-6 transition-all duration-300 hover:border-[#3b4153] group`}>
+      {/* Header: Title + Icon Container */}
+      <div className="flex items-start justify-between mb-6">
+        <div className="flex-1">
+          <p className="text-[#818ca2] text-[13px] font-semibold uppercase tracking-wider">
+            {title}
+          </p>
         </div>
-        <div className={`p-3 rounded-2xl ${isMain ? 'bg-white/10 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
-          {icon}
+        {/* Icon in top-right corner with subtle background */}
+        <div className="ml-4 p-3 bg-[#1c1f28] rounded-xl text-[#818ca2] group-hover:text-blue-400 transition-colors">
+          <div className="w-5 h-5">
+            {icon}
+          </div>
         </div>
       </div>
-      <div className="mt-6">
-        <span className={`text-[10px] font-bold px-3 py-1 rounded-full ${isMain ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
-          {trend}
-        </span>
+
+      {/* Value */}
+      <div className="mb-4">
+        <h3 className="text-white text-4xl font-bold tracking-tight">
+          {value}
+        </h3>
       </div>
+
+      {/* Trend/Subtitle */}
+      {trend && (
+        <div className="flex items-center gap-2">
+          <p className={`text-[12px] font-semibold ${trendColorClass}`}>
+            {trend}
+          </p>
+        </div>
+      )}
     </div>
   );
 };

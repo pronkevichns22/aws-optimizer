@@ -1,3 +1,10 @@
+// ============================================================================
+// FILE: App.tsx
+// LOCATION: client/src/
+// PURPOSE: Main application component that handles authentication, routing,
+//          and API communication with the backend server
+// ============================================================================
+
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Header } from './components/Layout/Header'; 
@@ -6,8 +13,12 @@ import { SecurityPage } from './pages/SecurityPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
 import NewDashboard from './pages/NewDashboard';
+import { useAWS } from './context/AWSContext';
 
 function App() {
+  const { setCredentials: setAWSContextCredentials } = useAWS();
+  
+  // ========== Main dashboard data state ==========
   const [data, setData] = useState<any>({
     summary: {
       totalSpend: 0,
@@ -16,12 +27,14 @@ function App() {
       resources: []
     }
   });
-  const [loading, setLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'resources' | 'security' | 'settings'>('dashboard');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);  // Показываем страницу входа при запуске 
-  const [credentials, setCredentials] = useState<any>({});
+  // ========== UI State ==========
+  const [loading, setLoading] = useState(false); // Shows loading spinner
+  const [currentPage, setCurrentPage] = useState<'dashboard' | 'resources' | 'security' | 'settings'>('dashboard'); // Current page being displayed
+  const [securityViewMode, setSecurityViewMode] = useState<'alerts' | 'logs'>('alerts'); // Which view to show on security page
+  const [isAuthenticated, setIsAuthenticated] = useState(false); // User is logged in
+  const [credentials, setCredentials] = useState<any>({}); // AWS credentials from user input
 
-  // Мониторим изменения credentials
+  // ========== Monitor credentials changes ==========
   useEffect(() => {
     console.log('🔍 Credentials updated:', {
       keys_count: Object.keys(credentials).length,
@@ -32,7 +45,7 @@ function App() {
     });
   }, [credentials]);
 
-  // Функция для подключения с использованием credentials
+  // ========== Connect to AWS with provided credentials ==========
   const handleConnect = async (creds: any) => {
     try {
       setLoading(true);
@@ -45,8 +58,9 @@ function App() {
       });
       
       setCredentials(creds);
+      setAWSContextCredentials(creds);
       
-      // Выполняем сканирование сразу после подключения
+      // Perform scan after connection
       const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
       const scanResponse = await axios.post(`${serverUrl}/api/scan`, {
         accessKeyId: creds.accessKeyId,
@@ -57,20 +71,25 @@ function App() {
       });
 
       if (scanResponse.status === 200) {
+        console.log('✅ Scan Response received:', {
+          hasAllResources: !!scanResponse.data?.allResources,
+          allResourcesCount: scanResponse.data?.allResources?.length || 0,
+          summary: scanResponse.data?.summary
+        });
         setData(scanResponse.data);
         setIsAuthenticated(true);
         console.log('✅ Connection successful');
       }
     } catch (error: any) {
       console.error('Error connecting:', error);
-      alert(`Ошибка подключения: ${error.response?.data?.message || error.message}`);
+      alert(`Connection error: ${error.response?.data?.message || error.message}`);
       setIsAuthenticated(false);
     } finally {
       setLoading(false);
     }
   };
 
-  // Функция для переповтора сканирования
+  // ========== Rescan AWS resources with current credentials ==========
   const handleRescan = async () => {
     console.log('🔍 Rescan triggered. Current credentials state:', {
       keys: Object.keys(credentials),
@@ -125,6 +144,13 @@ function App() {
     setCurrentPage('dashboard');
   };
 
+  const handleNavigateWithSecurityView = (page: 'dashboard' | 'resources' | 'security' | 'settings', viewMode?: 'alerts' | 'logs') => {
+    if (viewMode) {
+      setSecurityViewMode(viewMode);
+    }
+    setCurrentPage(page);
+  };
+
   return (
     <>
       {!isAuthenticated ? (
@@ -143,10 +169,10 @@ function App() {
 
           {/* Увеличенный отступ, чтобы было больше места между Хедером и контентом */}
           <div className="pt-[160px] flex-1 z-10">
-            {currentPage === 'dashboard' && <NewDashboard loading={loading} data={data} onRescan={handleRescan} />}
-            {currentPage === 'resources' && <NewResourcesPage data={data} />}
-            {currentPage === 'security' && <SecurityPage data={data} />}
-            {currentPage === 'settings' && <SettingsPage data={data} />}
+            {currentPage === 'dashboard' && <NewDashboard loading={loading} data={data} onRescan={handleRescan} onPageChange={handleNavigateWithSecurityView} />}
+            {currentPage === 'resources' && <NewResourcesPage data={data} onPageChange={handleNavigateWithSecurityView} />}
+            {currentPage === 'security' && <SecurityPage data={data} initialView={securityViewMode} onPageChange={handleNavigateWithSecurityView} />}
+            {currentPage === 'settings' && <SettingsPage />}
           </div>
           
         </div>

@@ -1,3 +1,9 @@
+// ============================================================================
+// FILE: NewDashboard.tsx
+// LOCATION: client/src/pages/
+// PURPOSE: Main dashboard page that displays AWS resources, costs, and trends
+// ============================================================================
+
 import React, { useState } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Search, Filter, Trash2 } from 'lucide-react';
@@ -9,11 +15,14 @@ interface DashboardProps {
   loading?: boolean;
   data?: any;
   onRescan?: () => void;
+  onPageChange?: (page: 'dashboard' | 'resources' | 'security' | 'settings', viewMode?: 'alerts' | 'logs') => void;
 }
 
+// ========== Card component for displaying metric with title and trend ==========
 const MetricCard = ({ title, value, changePercent, changeType, showDivider }: any) => {
     const isPositive = changeType === "positive";
-    const textColor = isPositive ? "#10B981" : "#EF4444"; 
+    const textColor = isPositive ? "#10B981" : "#EF4444";
+    const borderColor = isPositive ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)";
     const bgColor = isPositive ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)"; 
 
     return (
@@ -22,10 +31,10 @@ const MetricCard = ({ title, value, changePercent, changeType, showDivider }: an
           <h2 className="text-[#818ca2] text-[10px] font-black uppercase tracking-wider text-center">{title}</h2>
           <p className="text-white text-3xl font-black text-center leading-none">{value}</p>
           <div className="flex items-center justify-center gap-1 mt-1">
-            <div className="px-2 py- rounded-2xl" style={{ backgroundColor: bgColor }}>
-              <span className="text-[10px] font-bold" style={{ color: textColor }}>{changePercent}</span>
+            <div className="px-2 py-1 rounded-full border" style={{ backgroundColor: bgColor, borderColor: borderColor }}>
+              <div className="text-[10px] font-bold" style={{ color: textColor }}>{changePercent}</div>
             </div>
-            <span className="text-[#818ca2] text-[10px] whitespace-nowrap">vs last month</span>
+            <div className="text-[#818ca2] text-[10px] whitespace-nowrap">vs last month</div>
           </div>
         </div>
         {showDivider && <div className="w-px h-20 bg-[#242732] mx-2" />}
@@ -77,15 +86,18 @@ const EmptyState = () => (
   </div>
 );
 
-const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan }) => {
+const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan, onPageChange }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [resources, setResources] = useState(data?.resources || []);
+  const [resources, setResources] = useState(data?.allResources || []);
   
   // Добавляем состояние для пагинации (показываем по умолчанию 5 записей)
   const [visibleCount, setVisibleCount] = useState(5);
 
-  // Фильтруем ресурсы по категории и поисковому запросу
+  // Обновляем resources когда приходят новые данные
+  React.useEffect(() => {
+    setResources(data?.allResources || []);
+  }, [data?.allResources]);
   const filterCategories = ['All', 'EC2', 'EBS', 'IP'];
   const filteredResources = resources.filter((resource: any) => {
     const matchCategory = selectedCategory === 'All' || resource.type === selectedCategory;
@@ -94,6 +106,13 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan }) => 
       resource.id.toLowerCase().includes(searchLower) || 
       resource.type.toLowerCase().includes(searchLower);
     return matchCategory && matchSearch;
+  });
+
+  console.log('📊 NewDashboard Resources:', {
+    totalResources: resources.length,
+    resourceTypes: resources.map((r: any) => r.type).slice(0, 20),
+    selectedCategory,
+    filteredCount: filteredResources.length
   });
 
   // Отрезаем только видимую часть для отображения
@@ -132,41 +151,19 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan }) => 
 
   // Handler для экспорта
   const handleExport = () => {
-    if (!data?.resources) {
-      alert("No data available to export. Please run a scan first.");
-      return;
-    }
-
     const dataToExport = filteredResources.length > 0 ? filteredResources : resources;
 
     downloadReport({
-      title: 'CloudOpti Security & Cost Report',
-      filename: `aws-audit-${new Date().toISOString().split('T')[0]}.html`,
+      title: 'AWS Dashboard Report',
       resources: dataToExport,
+      filename: `aws-dashboard-report-${new Date().toISOString().split('T')[0]}.html`,
       summary: {
-        totalSpend: data.summary?.totalSpend || 0,
-        totalWaste: data.summary?.totalWaste || 0,
-        wasteCount: data.summary?.wasteCount || 0,
-        totalResources: data.summary?.resources?.length || data.resources.length || 0
+        totalSpend: data?.summary?.totalSpend || 0,
+        totalWaste: data?.summary?.totalWaste || 0,
+        wasteCount: data?.summary?.wasteCount || 0,
+        totalResources: data?.summary?.resources?.length || dataToExport.length || 0
       }
     });
-  };
-
-  // Handler для очистки
-  const handleCleanup = () => {
-    if (filteredResources.length === 0) {
-      alert('No resources to cleanup. Try adjusting your filters.');
-      return;
-    }
-
-    const confirmDelete = confirm(
-      `Are you sure you want to delete ${filteredResources.length} unused resource(s)?\n\nIDs: ${filteredResources.slice(0, 3).map((r: any) => r.id).join(', ')}${filteredResources.length > 3 ? '...' : ''}`
-    );
-
-    if (confirmDelete) {
-      setResources(resources.filter((r: any) => !filteredResources.includes(r)));
-      alert(`Successfully deleted ${filteredResources.length} resource(s)`);
-    }
   };
 
   // Handler для удаления одного ресурса
@@ -183,8 +180,10 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan }) => 
         <DashboardSidebar
           loading={loading}
           onRescan={onRescan}
-          onCleanup={handleCleanup}
           onExport={handleExport}
+          onPageChange={onPageChange}
+          alerts={data?.alerts || []}
+          data={data}
         />
 
         <main className="flex-1 flex flex-col">
@@ -205,12 +204,12 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan }) => 
               </div>
           </div>
 
-          <section className="flex h-[140px] items-center bg-[#13141b] rounded-[16px] border border-[#242732] px-6 shadow-lg mb-3">
+          <section className="flex h-[140px] items-center bg-[#13141b] rounded-[20px] border border-[#242732] px-6 shadow-lg mb-3">
             {(() => {
               const totalSpend = data?.summary?.totalSpend || 0;
               const totalWaste = data?.summary?.totalWaste || 0;
               const wasteCount = data?.summary?.wasteCount || 0;
-              const totalResources = data?.summary?.resources?.length || 0;
+              const totalResources = data?.allResources?.length || 0;
               
               const wastePercentNum = totalSpend > 0 ? (totalWaste / totalSpend) * 100 : 0;
               const wastePercent = wastePercentNum.toFixed(1);
@@ -285,7 +284,7 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan }) => 
           </div>
 
           <section className="bg-[#181921] rounded-[20px] border border-[#242732] p-8 mb-10 shadow-lg">
-                <h2 className="text-xl font-extrabold text-white mb-4 leading-7">Unused Resources</h2>
+                <h2 className="text-xl font-extrabold text-white mb-4 leading-7">All Resources</h2>
                 
                 {/* Filter Pills */}
                 <div className="flex gap-2 mb-6 flex-wrap">
@@ -296,7 +295,7 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan }) => 
                         setSelectedCategory(category);
                         setVisibleCount(5); // Сбрасываем пагинацию при смене фильтра
                       }}
-                      className={`px-4 py-2 rounded-full text-xs font-bold uppercase transition-all border ${getFilterPillStyle(category, selectedCategory === category)}`}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase transition-all border ${getFilterPillStyle(category, selectedCategory === category)}`}
                     >
                       {category}
                     </button>
