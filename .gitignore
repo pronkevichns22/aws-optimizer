@@ -10,13 +10,14 @@
 *.key
 *.pem
 *.crt
+.aws/
 aws-credentials.json
 credentials.json
 secrets.json
 api-keys.json
 
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -24,23 +25,38 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# Dependencies
+node_modules/
+*.egg-info/
+.venv/
+venv/
+env/
 
-# Editor directories and files
+# Build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# IDE and Editor
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+.idea/
 *.swp
 *.swo
+*.sw?
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+
+# System files
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# Testing
+coverage/
+.nyc_output/
 
 # Database
 *.db
