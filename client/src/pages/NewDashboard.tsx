@@ -4,26 +4,40 @@
 // PURPOSE: Main dashboard page that displays AWS resources, costs, and trends
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { Search, Filter, Trash2 } from 'lucide-react';
+import { Search, Filter, Trash2, Database, HardDrive, Server, MoreHorizontal } from 'lucide-react';
 import { DashboardSidebar } from '../components/Layout/DashboardSidebar';
 import { CostTrend } from '../components/ui/CostTrend';
 import { downloadReport } from '../utils/exportReport';
+import { useAWS } from '../context/AWSContext';
 
 interface DashboardProps {
   loading?: boolean;
   data?: any;
   onRescan?: () => void;
   onPageChange?: (page: 'dashboard' | 'resources' | 'security' | 'settings', viewMode?: 'alerts' | 'logs') => void;
+  onAIModalStateChange?: (isOpen: boolean) => void;
 }
 
 // ========== Card component for displaying metric with title and trend ==========
 const MetricCard = ({ title, value, changePercent, changeType, showDivider }: any) => {
     const isPositive = changeType === "positive";
-    const textColor = isPositive ? "#10B981" : "#EF4444";
-    const borderColor = isPositive ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)";
-    const bgColor = isPositive ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)"; 
+    const isNeutral = changeType === "neutral";
+    
+    let textColor = "#EF4444"; // default negative red
+    let borderColor = "rgba(239, 68, 68, 0.3)";
+    let bgColor = "rgba(239, 68, 68, 0.1)";
+    
+    if (isPositive) {
+      textColor = "#10B981"; // green
+      borderColor = "rgba(16, 185, 129, 0.3)";
+      bgColor = "rgba(16, 185, 129, 0.1)";
+    } else if (isNeutral) {
+      textColor = "#818ca2"; // gray
+      borderColor = "rgba(129, 140, 162, 0.3)";
+      bgColor = "rgba(129, 140, 162, 0.1)";
+    }
 
     return (
       <>
@@ -86,18 +100,75 @@ const EmptyState = () => (
   </div>
 );
 
-const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan, onPageChange }) => {
+const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan, onPageChange, onAIModalStateChange }) => {
+  const { credentials } = useAWS();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [resources, setResources] = useState(data?.allResources || []);
+  const [dashboardData, setDashboardData] = useState(data);
+  const [localLoading, setLocalLoading] = useState(false);
   
   // Добавляем состояние для пагинации (показываем по умолчанию 5 записей)
   const [visibleCount, setVisibleCount] = useState(5);
 
+  // ========== Auto-fetch dashboard data on mount if not already loaded ==========
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        // Only fetch if we don't have data and have credentials
+        if (!credentials?.accessKeyId) {
+          console.log('⚠️ No credentials available for dashboard auto-fetch');
+          return;
+        }
+
+        // Don't fetch if we already have data
+        if (dashboardData?.allResources && dashboardData.allResources.length > 0) {
+          console.log('✅ Dashboard data already available, skipping fetch');
+          return;
+        }
+
+        setLocalLoading(true);
+        console.log('📊 Auto-fetching dashboard data...');
+
+        // Normalize endpoint for LocalStack
+        let endpoint = credentials.endpoint;
+        if (credentials.isLocalStack && endpoint) {
+          endpoint = 'http://localhost:4566';
+        }
+
+        const response = await fetch('http://localhost:5000/api/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accessKeyId: credentials.accessKeyId,
+            secretAccessKey: credentials.secretAccessKey,
+            region: credentials.region || 'us-east-1',
+            isLocalStack: credentials.isLocalStack || false,
+            endpoint: credentials.isLocalStack ? endpoint : undefined,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Scan failed: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log('✅ Dashboard data fetched:', data);
+        setDashboardData(data);
+      } catch (err) {
+        console.error('❌ Dashboard data fetch error:', err);
+      } finally {
+        setLocalLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, [credentials?.accessKeyId]);
+
   // Обновляем resources когда приходят новые данные
   React.useEffect(() => {
-    setResources(data?.allResources || []);
-  }, [data?.allResources]);
+    setResources(dashboardData?.allResources || []);
+  }, [dashboardData?.allResources]);
   const filterCategories = ['All', 'EC2', 'EBS', 'IP'];
   const filteredResources = resources.filter((resource: any) => {
     const matchCategory = selectedCategory === 'All' || resource.type === selectedCategory;
@@ -126,7 +197,7 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan, onPag
   // Подготавливаем данные для диаграммы из ресурсов
   const serviceBreakdownData = (() => {
     const breakdown: { [key: string]: number } = {};
-    const allResources = data?.allResources || [];
+    const allResources = dashboardData?.allResources || [];
     
     allResources.forEach((r: any) => {
       const type = r.type || 'Other';
@@ -149,6 +220,20 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan, onPag
       .slice(0, 4);
   })();
 
+  // Get service icon based on type
+  const getServiceIcon = (serviceName: string) => {
+    switch (serviceName.toUpperCase()) {
+      case 'EC2':
+        return <Server size={18} className="text-[#B548FF]" />;
+      case 'RDS':
+        return <Database size={18} className="text-[#1A85FF]" />;
+      case 'S3':
+        return <HardDrive size={18} className="text-[#EF4444]" />;
+      default:
+        return <MoreHorizontal size={18} className="text-[#818CA2]" />;
+    }
+  };
+
   // Handler для экспорта
   const handleExport = () => {
     const dataToExport = filteredResources.length > 0 ? filteredResources : resources;
@@ -158,10 +243,10 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan, onPag
       resources: dataToExport,
       filename: `aws-dashboard-report-${new Date().toISOString().split('T')[0]}.html`,
       summary: {
-        totalSpend: data?.summary?.totalSpend || 0,
-        totalWaste: data?.summary?.totalWaste || 0,
-        wasteCount: data?.summary?.wasteCount || 0,
-        totalResources: data?.summary?.resources?.length || dataToExport.length || 0
+        totalSpend: dashboardData?.summary?.totalSpend || 0,
+        totalWaste: dashboardData?.summary?.totalWaste || 0,
+        wasteCount: dashboardData?.summary?.wasteCount || 0,
+        totalResources: dashboardData?.summary?.resources?.length || dataToExport.length || 0
       }
     });
   };
@@ -178,12 +263,13 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan, onPag
       <div className="w-full max-w-[1600px] flex gap-12 items-start z-10">
         
         <DashboardSidebar
-          loading={loading}
+          loading={loading || localLoading}
           onRescan={onRescan}
           onExport={handleExport}
           onPageChange={onPageChange}
-          alerts={data?.alerts || []}
-          data={data}
+          alerts={dashboardData?.alerts || []}
+          data={dashboardData}
+          onAIModalStateChange={onAIModalStateChange}
         />
 
         <main className="flex-1 flex flex-col">
@@ -206,40 +292,61 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan, onPag
 
           <section className="flex h-[140px] items-center bg-[#13141b] rounded-[20px] border border-[#242732] px-6 shadow-lg mb-3">
             {(() => {
-              const totalSpend = data?.summary?.totalSpend || 0;
-              const totalWaste = data?.summary?.totalWaste || 0;
-              const wasteCount = data?.summary?.wasteCount || 0;
-              const totalResources = data?.allResources?.length || 0;
+              const totalSpend = dashboardData?.summary?.totalSpend || 0;
+              const totalWaste = dashboardData?.summary?.totalWaste || 0;
+              const wasteCount = dashboardData?.summary?.wasteCount || 0;
+              const totalResources = dashboardData?.allResources?.length || 0;
               
-              const wastePercentNum = totalSpend > 0 ? (totalWaste / totalSpend) * 100 : 0;
-              const wastePercent = wastePercentNum.toFixed(1);
-              const resourcesPercentNum = totalResources > 0 ? (wasteCount / totalResources) * 100 : 0;
-              const resourcesPercent = resourcesPercentNum.toFixed(1);
+              // Use server-provided trend metrics - filter out invalid values
+              let spendTrend = dashboardData?.trendMetrics?.spendChange || 'N/A';
+              let wasteTrend = dashboardData?.trendMetrics?.wasteChange || 'N/A';
+              
+              // BUGFIX: Filter out "+0%" and "-0%" - they're invalid
+              if (spendTrend === '+0%' || spendTrend === '-0%' || spendTrend === '0%') {
+                spendTrend = 'N/A';
+              }
+              if (wasteTrend === '+0%' || wasteTrend === '-0%' || wasteTrend === '0%') {
+                wasteTrend = 'N/A';
+              }
+              
+              // Determine colors based on trend data
+              const getSpendChangeType = (): 'positive' | 'negative' => {
+                if (spendTrend === 'N/A') return 'neutral';
+                return spendTrend.includes('-') ? 'positive' : 'negative';
+              };
+              
+              const getWasteChangeType = (): 'positive' | 'negative' => {
+                if (wasteTrend === 'N/A') return 'neutral';
+                return wasteTrend.includes('-') ? 'positive' : 'negative';
+              };
+              
+              const wastePercentNum = totalResources > 0 ? (wasteCount / totalResources) * 100 : 0;
+              const resourcesPercent = wastePercentNum > 0 ? wastePercentNum.toFixed(1) : '0.0';
 
               return [
                 { 
                   title: "Total Spend", 
-                  value: totalSpend ? `$${totalSpend.toFixed(2)}` : "$0.00",
-                  changePercent: `${wastePercent}%`,
-                  changeType: wastePercentNum > 0 ? "negative" : "positive"
+                  value: totalResources > 0 ? `$${dashboardData?.summary?.totalSpend?.toFixed(2) || '0.00'}` : "$0.00",
+                  changePercent: spendTrend,
+                  changeType: getSpendChangeType()
                 },
                 { 
                   title: "Total Waste", 
-                  value: totalWaste ? `$${totalWaste.toFixed(2)}` : "$0.00",
-                  changePercent: `${wastePercent}%`,
-                  changeType: "negative"
+                  value: totalResources > 0 ? `$${dashboardData?.summary?.totalWaste?.toFixed(2) || '0.00'}` : "$0.00",
+                  changePercent: wasteTrend,
+                  changeType: getWasteChangeType()
                 },
                 { 
                   title: "Resources Count", 
                   value: totalResources.toString(),
-                  changePercent: totalResources > 0 ? totalResources.toString() : "0",
-                  changeType: "positive"
+                  changePercent: dashboardData?.isFirstScan ? 'N/A' : '+0',
+                  changeType: "neutral"
                 },
                 { 
                   title: "Wasted Resources", 
                   value: wasteCount.toString(),
-                  changePercent: `${resourcesPercent}%`,
-                  changeType: wasteCount > 0 ? "negative" : "positive"
+                  changePercent: dashboardData?.isFirstScan || wasteCount === 0 ? 'N/A' : `${resourcesPercent}%`,
+                  changeType: dashboardData?.isFirstScan || wasteCount === 0 ? "neutral" : "negative"
                 }
               ].map((metric, index) => (
                   <MetricCard
@@ -257,28 +364,30 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan, onPag
           {/* Графики */}
           <div className="grid grid-cols-1 xl:grid-cols-[2.2fr_1fr] gap-3 mb-3">
             <div className="bg-[#181921] border border-[#242732] rounded-[16px] p-8 h-[400px] flex flex-col shadow-lg">
-              <CostTrend data={data} />
+              <CostTrend data={dashboardData} />
             </div>
             
             <div className="bg-[#181921] border border-[#242732] rounded-[16px] p-8 h-[400px] flex flex-col shadow-lg">
-              <h3 className="text-xl font-black mb-6 tracking-tight text-white">Spend by Service</h3>
-              <div className="flex-1 flex items-center justify-center">
-                <ResponsiveContainer width="100%" height={180}>
+              <h3 className="text-xl font-black mb-3 tracking-tight text-white">Spend by Service</h3>
+              <div className="flex-1 flex flex-col items-center justify-start">
+                <ResponsiveContainer width="100%" height={250}>
                   <PieChart>
-                      <Pie data={serviceBreakdownData} innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value">
+                      <Pie data={serviceBreakdownData} innerRadius={70} outerRadius={115} paddingAngle={4} dataKey="value">
                       {serviceBreakdownData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                       </Pie>
                       <Tooltip contentStyle={{ backgroundColor: '#1C1D25', border: 'none', borderRadius: '12px', color: '#FFFFFF' }} />
                   </PieChart>
                 </ResponsiveContainer>
-              </div>
-              <div className="grid grid-cols-2 gap-y-3 mt-4 pt-4 border-t border-[#242732]">
-                {serviceBreakdownData.map(item => (
-                  <div key={item.name} className="flex items-center gap-2 text-[11px] font-bold text-white">
-                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></div> 
-                    <span>{item.name} - {item.value}%</span>
-                  </div>
-                ))}
+                <div className="grid grid-cols-2 gap-x-2 gap-y-2 mt-2 pt-3 border-t border-[#242732] w-full">
+                  {serviceBreakdownData.map(item => (
+                    <div key={item.name} className="flex items-center gap-2 text-xs font-bold text-white min-w-0">
+                      <div className="flex-shrink-0">
+                        {getServiceIcon(item.name)}
+                      </div>
+                      <span className="text-[11px] truncate">{item.name} - {item.value}%</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -309,8 +418,8 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan, onPag
                             <th className="text-left py-3 px-2 text-gray-400 font-semibold text-xs uppercase tracking-wider">Resource ID</th>
                             <th className="text-center py-3 px-4 text-gray-400 font-semibold text-xs uppercase tracking-wider">Type</th>
                             <th className="text-center py-3 px-4 text-gray-400 font-semibold text-xs uppercase tracking-wider">Size</th>
+                            <th className="text-center py-3 px-4 text-gray-400 font-semibold text-xs uppercase tracking-wider">Status</th>
                             <th className="text-center py-3 px-4 text-gray-400 font-semibold text-xs uppercase tracking-wider">Cost</th>
-                            <th className="text-center py-3 px-4 text-gray-400 font-semibold text-xs uppercase tracking-wider">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -327,16 +436,13 @@ const NewDashboard: React.FC<DashboardProps> = ({ loading, data, onRescan, onPag
                                     {resource.type}
                                   </span>
                                 </td>
-                                <td className="py-4 px-4 text-center text-gray-300">{resource.size} GB</td>
-                                <td className="py-4 px-4 text-center font-semibold text-[#EF4444]">${resource.cost.toFixed(2)}</td>
+                                <td className="py-4 px-4 text-center text-gray-300">{resource.size}</td>
                                 <td className="py-4 px-4 text-center">
-                                  <button 
-                                    onClick={() => handleDeleteResource(resource)}
-                                    className="text-gray-400 hover:text-red-500 transition-colors p-1 cursor-pointer"
-                                  >
-                                    <Trash2 size={16}/>
-                                  </button>
+                                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${(['Active', 'running'].includes(resource.status)) ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-gray-500/20 text-gray-400 border border-gray-500/30'}`}>
+                                    {resource.status}
+                                  </span>
                                 </td>
+                                <td className="py-4 px-4 text-center font-semibold text-[#FF6B6B]">${resource.cost.toFixed(2)}</td>
                               </tr>
                             ))
                           ) : (

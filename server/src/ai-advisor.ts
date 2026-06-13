@@ -1,11 +1,12 @@
 // ============================================================================
 // FILE: ai-advisor.ts
 // LOCATION: server/src/
-// PURPOSE: Groq AI integration for AWS optimization recommendations
-// FEATURES: Analyzes alerts and provides actionable recommendations
+// PURPOSE: Groq AI integration with RAG for AWS optimization recommendations
+// FEATURES: RAG-enhanced analysis, alerts processing, and actionable recommendations
 // ============================================================================
 
 import { Groq } from 'groq-sdk';
+import { retrieveSimilarDocuments, hybridSearch } from './vector-store';
 
 // ========== AI ADVISOR CONFIGURATION - MAXIMUM LIMITS ==========
 const AI_CONFIG = {
@@ -14,11 +15,13 @@ const AI_CONFIG = {
   MAX_TOKENS_MAIN: 512,           // Tokens for main recommendations
   MAX_TOKENS_SECURITY: 256,       // Tokens for security recommendations
   MAX_TOKENS_COST: 256,           // Tokens for cost recommendations
-  MAX_TOKENS_CHAT: 400,           // Tokens for chat responses
-  TEMPERATURE_FOCUSED: 0.3,       // Low temp for focused, concise answers
+  MAX_TOKENS_CHAT: 1024,          // Tokens for chat responses (increased for detailed answers with AWS CLI)
+  TEMPERATURE_FOCUSED: 0.2,       // Very low temp for precise, deterministic answers
   MAX_ALERTS_SECURITY: 8,         // Max security alerts to analyze
   MAX_ALERTS_COST: 8,             // Max cost alerts to analyze
-  MAX_CHAT_HISTORY_MESSAGES: 6,   // Context window: last 3 exchanges (user + assistant pairs)
+  MAX_CHAT_HISTORY_MESSAGES: 12,   // Context window: last 6 exchanges (user + assistant pairs)
+  RAG_TOP_K: 5,                   // Number of knowledge base documents to retrieve
+  RAG_SIMILARITY_THRESHOLD: 0.3,  // Minimum similarity score for RAG results
 } as const;
 
 let groq: Groq | null = null;
@@ -57,11 +60,66 @@ export interface AIRecommendation {
   recommendations: string[];
   estimatedSavings?: string;
   priority: 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
+  ragSources?: string[]; // Track which knowledge base docs were used
 }
 
 /**
- * Get AI recommendations based on alerts
+ * Build RAG context from knowledge base
+ * Retrieves relevant AWS best practices based on alerts
+ * @param alerts - Array of alerts to analyze
+ * @param topK - Number of documents to retrieve
+ * @returns Formatted context string for LLM
+ */
+async function buildRAGContext(alerts: Alert[], topK: number = 5): Promise<{
+  context: string;
+  sources: string[];
+}> {
+  try {
+    if (alerts.length === 0) {
+      return { context: '', sources: [] };
+    }
+
+    // Create search queries from alerts
+    const searchQueries = alerts
+      .slice(0, 3)
+      .map((a) => `${a.title} ${a.description}`)
+      .join(' | ');
+
+    // Retrieve relevant documents from knowledge base
+    const similarDocs = await hybridSearch(searchQueries, topK);
+
+    if (similarDocs.length === 0) {
+      console.log('⚠️  No relevant knowledge base documents found for RAG');
+      return { context: '', sources: [] };
+    }
+
+    // Format retrieved documents as context
+    const ragContext = similarDocs
+      .map(
+        (doc, index) =>
+          `[DOC ${index + 1}] ${doc.title} (${doc.severity})
+Source: ${doc.source}
+Content: ${doc.content.substring(0, 300)}...
+Similarity: ${(doc.similarity * 100).toFixed(1)}%`
+      )
+      .join('\n\n');
+
+    const sources = similarDocs.map((doc) => `${doc.title} (${doc.source})`);
+
+    return {
+      context: ragContext,
+      sources,
+    };
+  } catch (error) {
+    console.error('❌ Failed to build RAG context:', error);
+    return { context: '', sources: [] };
+  }
+}
+
+/**
+ * Get AI recommendations based on alerts (with RAG)
  * Uses Groq API to analyze top alerts and provide actionable recommendations
+ * Enhanced with RAG to reference AWS best practices knowledge base
  * @param alerts - Array of alerts to analyze
  * @param detailed - If true, provide detailed recommendations; if false, provide brief summary only
  */
@@ -74,6 +132,7 @@ export async function getAIRecommendations(
       summary: 'No alerts to analyze',
       recommendations: [],
       priority: 'LOW',
+      ragSources: [],
     };
   }
 
@@ -91,7 +150,17 @@ export async function getAIRecommendations(
     )
     .join('\n');
 
-  const briefPrompt = `You are an AWS expert AI built into AWS Optimizer platform.
+  // 🚀 RAG ENHANCEMENT: Retrieve relevant AWS best practices
+  const { context: ragContext, sources: ragSources } = await buildRAGContext(
+    alerts,
+    AI_CONFIG.RAG_TOP_K
+  );
+
+  const ragContextBlock = ragContext
+    ? `\n\n📚 RELEVANT AWS BEST PRACTICES FROM KNOWLEDGE BASE:\n${ragContext}\n\nUse these practices to inform your recommendations.`
+    : '';
+
+  const briefPrompt = `You are an AWS expert AI created by Nikita for AWS Optimizer platform.
 
 YOUR SYSTEM CAN:
 ✓ Display Security alerts + recommendations
@@ -106,9 +175,12 @@ YOUR SYSTEM CANNOT:
 ✗ Create/modify AWS resources
 ✗ Execute AWS CLI commands
 
+If asked who created you: "I was created by Nikita"
+
 Analyze these alerts briefly (1-2 sentences):
 
 ${alertSummary}
+${ragContextBlock}
 
 RESPOND IN JSON ONLY - ONLY recommend what system CAN do:
 {
@@ -117,7 +189,7 @@ RESPOND IN JSON ONLY - ONLY recommend what system CAN do:
   "priority": "URGENT|HIGH|MEDIUM|LOW"
 }`;
 
-  const detailedPrompt = `You are an AWS expert AI built into AWS Optimizer platform.
+  const detailedPrompt = `You are an AWS expert AI created by Nikita for AWS Optimizer platform with access to AWS best practices knowledge base.
 
 YOUR SYSTEM CAN:
 ✓ Display Security alerts with detailed recommendations
@@ -134,9 +206,12 @@ YOUR SYSTEM CANNOT:
 ✗ Create security groups or change configs
 ✗ Deploy infrastructure
 
-Analyze these alerts - provide ONLY actionable steps your system CAN do:
+If asked who created you: "I was created by Nikita"
+
+Analyze these alerts - provide actionable steps based on AWS best practices:
 
 ${alertSummary}
+${ragContextBlock}
 
 RESPOND IN JSON ONLY:
 {
@@ -146,13 +221,13 @@ RESPOND IN JSON ONLY:
   "priority": "URGENT|HIGH|MEDIUM|LOW"
 }
 
-Rules: Only recommend your system's features. No external tools. Plain text.`;
+Rules: Only recommend your system's features. Reference best practices. Plain text.`;
 
   const prompt = detailed ? detailedPrompt : briefPrompt;
 
   const message = await getGroqClient().chat.completions.create({
     model: 'llama-3.1-8b-instant',
-    max_tokens: detailed ? AI_CONFIG.MAX_TOKENS_MAIN : 200, // Use less tokens for brief
+    max_tokens: detailed ? AI_CONFIG.MAX_TOKENS_MAIN : 200,
     temperature: AI_CONFIG.TEMPERATURE_FOCUSED,
     messages: [
       {
@@ -187,6 +262,7 @@ Rules: Only recommend your system's features. No external tools. Plain text.`;
         : [],
       estimatedSavings: detailed ? parsed.estimatedSavings : undefined,
       priority,
+      ragSources: ragSources.slice(0, 3), // Include top 3 sources
     };
   } catch (error) {
     console.error('Failed to parse AI response:', error);
@@ -201,31 +277,42 @@ Rules: Only recommend your system's features. No external tools. Plain text.`;
           'Optimize instance types for cost',
         ],
         priority: criticalCount > 0 ? 'URGENT' : 'HIGH',
+        ragSources,
       };
     } else {
       return {
         summary: `${alerts.length} issues found. Click button for details.`,
         recommendations: ['View details in Security tab'],
         priority: criticalCount > 0 ? 'URGENT' : 'HIGH',
+        ragSources,
       };
     }
   }
 }
 
 /**
- * Generate security-focused recommendations
+ * Generate security-focused recommendations (with RAG)
  */
 export async function getSecurityRecommendations(
   securityAlerts: Alert[]
-): Promise<string> {
+): Promise<{ text: string; ragSources: string[] }> {
   if (securityAlerts.length === 0) {
-    return 'No security issues detected. Your infrastructure is secure.';
+    return {
+      text: 'No security issues detected. Your infrastructure is secure.',
+      ragSources: [],
+    };
   }
 
   const alertSummary = securityAlerts
     .slice(0, AI_CONFIG.MAX_ALERTS_SECURITY)
     .map((a) => `- ${a.title}: ${a.description}`)
     .join('\n');
+
+  // 🚀 RAG: Get security best practices
+  const { context: ragContext, sources: ragSources } = await buildRAGContext(
+    securityAlerts.filter((a) => a.type === 'SECURITY'),
+    AI_CONFIG.RAG_TOP_K
+  );
 
   const message = await getGroqClient().chat.completions.create({
     model: 'llama-3.1-8b-instant',
@@ -238,28 +325,42 @@ export async function getSecurityRecommendations(
 
 ${alertSummary}
 
+${ragContext ? `\nReference these AWS security best practices:\n${ragContext}` : ''}
+
 Format: Numbered list (1. 2. 3.). Each fix max 1 line. Be actionable. NO MARKDOWN - use plain text only.`,
       },
     ],
   });
 
-  return message.choices[0].message.content || '';
+  return {
+    text: message.choices[0].message.content || '',
+    ragSources: ragSources.slice(0, 2),
+  };
 }
 
 /**
- * Generate cost optimization recommendations
+ * Generate cost optimization recommendations (with RAG)
  */
 export async function getCostOptimizationRecommendations(
   costAlerts: Alert[]
-): Promise<string> {
+): Promise<{ text: string; ragSources: string[] }> {
   if (costAlerts.length === 0) {
-    return 'Your infrastructure is optimized for cost. No major savings opportunities found.';
+    return {
+      text: 'Your infrastructure is optimized for cost. No major savings opportunities found.',
+      ragSources: [],
+    };
   }
 
   const alertSummary = costAlerts
     .slice(0, AI_CONFIG.MAX_ALERTS_COST)
     .map((a) => `- ${a.title}: ${a.description}`)
     .join('\n');
+
+  // 🚀 RAG: Get FinOps best practices
+  const { context: ragContext, sources: ragSources } = await buildRAGContext(
+    costAlerts.filter((a) => a.type === 'FINOPS'),
+    AI_CONFIG.RAG_TOP_K
+  );
 
   const message = await getGroqClient().chat.completions.create({
     model: 'llama-3.1-8b-instant',
@@ -272,16 +373,21 @@ export async function getCostOptimizationRecommendations(
 
 ${alertSummary}
 
+${ragContext ? `\nReference these FinOps best practices:\n${ragContext}` : ''}
+
 Format: Numbered list (1. 2. 3.). Each action max 1 line. Include estimated savings. NO MARKDOWN - use plain text only.`,
       },
     ],
   });
 
-  return message.choices[0].message.content || '';
+  return {
+    text: message.choices[0].message.content || '',
+    ragSources: ragSources.slice(0, 2),
+  };
 }
 
 /**
- * Handle user messages and questions about their infrastructure
+ * Handle user messages and questions about their infrastructure (with RAG)
  */
 export async function getUserAIResponse(
   userMessage: string,
@@ -291,9 +397,34 @@ export async function getUserAIResponse(
     totalCost?: number;
     chatHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
   }
-): Promise<string> {
+): Promise<{ text: string; ragSources: string[] }> {
   if (!userMessage.trim()) {
-    return 'Ask about your infrastructure.';
+    return {
+      text: 'Ask about your infrastructure.',
+      ragSources: [],
+    };
+  }
+
+  // 🚀 RAG: Retrieve relevant knowledge base documents
+  let ragContext = '';
+  let ragSources: string[] = [];
+  try {
+    const similarDocs = await retrieveSimilarDocuments(userMessage, AI_CONFIG.RAG_TOP_K);
+    if (similarDocs.length > 0) {
+      ragContext = `\n\n📚 RELEVANT AWS BEST PRACTICES:
+${similarDocs
+  .map(
+    (doc, i) =>
+      `${i + 1}. ${doc.title} (${doc.severity})\n   Source: ${doc.source}\n   Preview: ${doc.content.substring(0, 150)}...`
+  )
+  .join('\n\n')}
+
+Consider these best practices when answering.`;
+      ragSources = similarDocs.map((doc) => `${doc.title} (${doc.source})`);
+    }
+  } catch (error) {
+    console.error('❌ RAG retrieval failed:', error);
+    // Continue without RAG context
   }
 
   // Build system context from alerts
@@ -301,26 +432,54 @@ export async function getUserAIResponse(
   if (context?.alerts && context.alerts.length > 0) {
     const criticalCount = context.alerts.filter(a => a.severity === 'CRITICAL').length;
     const highCount = context.alerts.filter(a => a.severity === 'HIGH').length;
-    const securityAlerts = context.alerts.filter(a => a.type === 'SECURITY');
-    const finopsAlerts = context.alerts.filter(a => a.type === 'FINOPS');
     
     systemContext = `\nCURRENT STATUS: ${context.alerts.length} alerts (${criticalCount} CRITICAL, ${highCount} HIGH) | ${context.resourceCount || 0} resources | $${context.totalCost || 0}/month`;
   }
 
-  // Build message history - include previous messages for context
+  // Build message history
+  const systemPrompt = `You are AWS Optimizer AI Expert created by Nikita. Your expertise:
+✓ AWS security best practices & threat analysis
+✓ Cost optimization & resource efficiency  
+✓ Specific AWS CLI commands (exact syntax)
+✓ Risk mitigation strategies (minimize downtime)
+✓ Cloud infrastructure recommendations
+
+RESPONSE FORMAT REQUIREMENTS:
+1. Start with THREAT ANALYSIS: What's the actual risk?
+2. Provide STEP-BY-STEP MITIGATION with exact AWS CLI commands
+3. Include VERIFICATION steps to test each change
+4. Provide ROLLBACK PLAN if something fails
+5. Add BEST PRACTICES at the end
+
+COMMAND FORMAT: When providing AWS CLI commands, use this format:
+  aws ec2 describe-security-groups --group-ids sg-12345
+  (Show region, profile if needed, explain each parameter)
+
+RISK MINIMIZATION:
+- For Security Groups: Add new rules FIRST, remove old rules LAST
+- For migrations: Always test in one resource before bulk changes
+- Always provide estimated time and impact assessment
+
+${systemContext}
+${ragContext}
+
+Creator: Nikita
+Current capabilities: AWS scanning, security analysis, cost recommendations
+
+When user asks about security/cost issues, provide SPECIFIC, ACTIONABLE AWS CLI COMMANDS with clear step-by-step instructions.`;
+
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
     {
       role: 'user',
-      content: `You are AWS Optimizer AI. You help with:
-✓ Reviewing Security/Cost alerts
-✓ Explaining Resources/Security/Dashboard pages
-✓ Identifying issues in their AWS infrastructure${systemContext}
-
-If asked about something you can't do: "That requires manual AWS work, but I can help identify it."`
+      content: systemPrompt
+    },
+    {
+      role: 'assistant',
+      content: 'Understood. I will provide expert AWS optimization advice with specific CLI commands and risk mitigation strategies, informed by best practices.'
     }
   ];
 
-  // Add chat history (limit to MAX_CHAT_HISTORY_MESSAGES for context window control)
+  // Add chat history
   if (context?.chatHistory && context.chatHistory.length > 0) {
     const recentHistory = context.chatHistory.slice(-AI_CONFIG.MAX_CHAT_HISTORY_MESSAGES);
     if (recentHistory.length > 0) {
@@ -329,21 +488,56 @@ If asked about something you can't do: "That requires manual AWS work, but I can
     }
   }
 
+  // Detect question type and add context-specific guidance
+  const lowerMessage = userMessage.toLowerCase();
+  let contextualGuidance = '';
+  
+  if (lowerMessage.includes('security group') || lowerMessage.includes('ssh') || lowerMessage.includes('port') || lowerMessage.includes('0.0.0.0')) {
+    contextualGuidance = `\n\n[SYSTEM INSTRUCTION: This question is about Security Groups. Provide:
+1. Exact AWS CLI describe/authorize/revoke commands with all parameters
+2. Warning about 0.0.0.0/0 (anyone can access)
+3. Step-by-step migration: ADD new rules first, REMOVE old rules last
+4. IP ranges in CIDR notation
+5. Test verification command]`;
+  } else if (lowerMessage.includes('cost') || lowerMessage.includes('waste') || lowerMessage.includes('optimize') || lowerMessage.includes('save')) {
+    contextualGuidance = `\n\n[SYSTEM INSTRUCTION: This is about cost optimization. Include:
+1. Current estimated monthly cost
+2. Specific resource IDs to delete/resize
+3. Estimated monthly savings after changes
+4. AWS CLI commands to identify unused resources
+5. Shutdown/termination commands with safety checks]`;
+  } else if (lowerMessage.includes('encryption') || lowerMessage.includes('ebs') || lowerMessage.includes('volume')) {
+    contextualGuidance = `\n\n[SYSTEM INSTRUCTION: This is about EBS/storage security. Include:
+1. Current encryption status check commands
+2. Encryption best practices
+3. How to enable EBS encryption by default
+4. Volume type recommendations (gp3 > gp2)
+5. Snapshot security considerations]`;
+  }
+
   // Add current user message
   messages.push({
     role: 'user',
-    content: userMessage
+    content: userMessage + contextualGuidance
   });
 
   const response = await getGroqClient().chat.completions.create({
     model: 'llama-3.1-8b-instant',
-    max_tokens: AI_CONFIG.MAX_TOKENS_CHAT, // Use config limit instead of hardcoded 100
+    max_tokens: AI_CONFIG.MAX_TOKENS_CHAT,
     temperature: 0.3,
     messages: messages,
   });
 
   const aiResponse = response.choices[0].message.content || 'Check your dashboard.';
   
-  // Don't truncate artificially - return full response
-  return aiResponse.trim();
+  // Return response with RAG sources
+  return {
+    text: aiResponse.trim(),
+    ragSources: ragSources.slice(0, 3),
+  };
 }
+
+/**
+ * Export AI config for testing
+ */
+export { AI_CONFIG };

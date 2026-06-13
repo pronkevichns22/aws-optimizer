@@ -19,6 +19,10 @@ type TimePeriod = '12h' | '24h' | '7d' | '30d';
 export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
   const [timePeriod, setTimePeriod] = useState<TimePeriod>('7d');
 
+  // Check if there's actual data
+  const hasRealData = !!(auditHistory && auditHistory.length > 0) || 
+                      !!(data?.summary?.totalSpend && data.summary.totalSpend > 0);
+
   const generateMockTrendData = (period: TimePeriod) => {
     const today = new Date();
     const trendData = [];
@@ -41,8 +45,8 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
         ? date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
         : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-      const baseSpend = data?.summary?.totalSpend || 36.88;
-      const baseWaste = data?.summary?.totalWaste || 9.20;
+      const baseSpend = data?.summary?.totalSpend || 0;
+      const baseWaste = data?.summary?.totalWaste || 0;
       const randomFactor = 0.8 + Math.random() * 0.4;
 
       trendData.push({
@@ -60,6 +64,25 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
   const minWaste = Math.min(...trendData.map(d => d.waste));
   const maxWaste = Math.max(...trendData.map(d => d.waste));
   const wasteReduction = maxWaste - minWaste;
+
+  // Show empty state if no real data
+  if (!hasRealData) {
+    return (
+      <div className="w-full h-full flex flex-col bg-transparent">
+        <div className="flex items-start justify-between mb-4 flex-shrink-0">
+          <div>
+            <h3 className="text-[16px] font-bold text-white tracking-tight" style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 700 }}>Cost Trend</h3>
+            <p className="text-[12px] text-[#818ca2] font-medium mt-1" style={{ fontFamily: "'Albert Sans', sans-serif" }}>Spending & waste analysis</p>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-[#818ca2] text-sm">Run a scan to see cost trends</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full flex flex-col bg-transparent">
@@ -85,10 +108,10 @@ export const CostTrend = ({ data, auditHistory }: CostTrendProps) => {
           <button
             key={period}
             onClick={() => setTimePeriod(period)}
-            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all duration-200 ${
+            className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase transition-all border ${
               timePeriod === period
-                ? 'bg-main-collection-tgblue text-white'
-                : 'bg-main-collection-dark-navy-border text-main-collection-passive hover:bg-[#2a2e3f] hover:text-white'
+                ? 'bg-[#1a85ff]/20 border-[#1a85ff]/50 text-[#1a85ff]'
+                : 'bg-[#242732] text-[#818CA2] hover:bg-[#2F334B] border border-[#242732]'
             }`}
             style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 600 }}
           >

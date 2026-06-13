@@ -1,24 +1,67 @@
 // ============================================================================
-// FILE: App.tsx
+// FILE: App.tsx (Refactored with React Router)
 // LOCATION: client/src/
-// PURPOSE: Main application component that handles authentication, routing,
-//          and API communication with the backend server
+// PURPOSE: Main routing and authentication handling
 // ============================================================================
 
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Header } from './components/Layout/Header'; 
+import { useAWS } from './context/AWSContext';
+
+// Pages
+import { LoginPage } from './pages/LoginPage';
+import { RegisterPage } from './pages/RegisterPage';
+import NewDashboard from './pages/NewDashboard';
 import NewResourcesPage from './pages/NewResourcesPage';
 import { SecurityPage } from './pages/SecurityPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { LoginPage } from './pages/LoginPage';
-import NewDashboard from './pages/NewDashboard';
-import { useAWS } from './context/AWSContext';
+import { Header } from './components/Layout/Header';
 
-function App() {
-  const { setCredentials: setAWSContextCredentials } = useAWS();
+// ========== Protected Route Component ==========
+const ProtectedRoute = ({ children, isAuthenticated, isLoading }: any) => {
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#0B0C10] flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+          <p className="text-[#818CA2] mt-4">Loading...</p>
+        </div>
+      </div>
+    );
+  }
   
-  // ========== Main dashboard data state ==========
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return children;
+};
+
+// ========== Dashboard Layout Component ==========
+const DashboardLayout = ({ children, currentPage, onPageChange, onLogout, isAIModalOpen }: any) => {
+  return (
+    <div className={`min-h-screen bg-[#0B0C10] flex flex-col relative`}>
+      {/* Header */}
+      <Header 
+        currentPage={currentPage}
+        onPageChange={onPageChange}
+        onLogout={onLogout}
+      />
+      <div className="absolute top-0 left-0 w-full h-[300px] bg-[#181921] -z-10 pointer-events-none" />
+      
+      <div className="pt-[160px] flex-1">
+        {children}
+      </div>
+    </div>
+  );
+};
+
+// ========== Main App Component ==========
+export default function App() {
+  const navigate = useNavigate();
+  const { isAuthenticated, setToken, setUser, logout, credentials, setCredentials } = useAWS();
+  
   const [data, setData] = useState<any>({
     summary: {
       totalSpend: 0,
@@ -27,158 +70,218 @@ function App() {
       resources: []
     }
   });
-  // ========== UI State ==========
-  const [loading, setLoading] = useState(false); // Shows loading spinner
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'resources' | 'security' | 'settings'>('dashboard'); // Current page being displayed
-  const [securityViewMode, setSecurityViewMode] = useState<'alerts' | 'logs'>('alerts'); // Which view to show on security page
-  const [isAuthenticated, setIsAuthenticated] = useState(false); // User is logged in
-  const [credentials, setCredentials] = useState<any>({}); // AWS credentials from user input
+  
+  const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState<'dashboard' | 'resources' | 'security' | 'settings'>('dashboard');
+  const [securityViewMode, setSecurityViewMode] = useState<'alerts' | 'logs'>('alerts');
+  const [isAppLoading, setIsAppLoading] = useState(true);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
-  // ========== Monitor credentials changes ==========
+  // Check authentication on mount
   useEffect(() => {
-    console.log('🔍 Credentials updated:', {
-      keys_count: Object.keys(credentials).length,
-      hasAccessKey: !!credentials.accessKeyId,
-      hasSecretKey: !!credentials.secretAccessKey,
-      isLocalStack: credentials.isLocalStack,
-      full: credentials
-    });
-  }, [credentials]);
+    const token = localStorage.getItem('auth_token');
+    const user = localStorage.getItem('auth_user');
+    
+    if (token && user) {
+      setToken(token);
+      setUser(JSON.parse(user));
+    }
+    
+    setIsAppLoading(false);
+  }, []);
 
-  // ========== Connect to AWS with provided credentials ==========
   const handleConnect = async (creds: any) => {
     try {
       setLoading(true);
-      console.log('💾 Storing credentials:', {
-        accessKeyId: creds.accessKeyId ? '✓ provided' : '✗ missing',
-        secretAccessKey: creds.secretAccessKey ? '✓ provided' : '✗ missing',
-        region: creds.region,
-        isLocalStack: creds.isLocalStack,
-        endpoint: creds.endpoint
+      console.log('💾 Storing credentials...');
+      
+      // Normalize endpoint for LocalStack
+      let endpoint = creds.endpoint;
+      if (creds.isLocalStack && endpoint) {
+        // Replace any IP-based endpoint with localhost
+        endpoint = 'http://localhost:4566';
+        console.log('🔧 Normalized LocalStack endpoint to:', endpoint);
+      }
+      
+      // Save credentials to context
+      setCredentials({
+        accessKeyId: creds.accessKeyId,
+        secretAccessKey: creds.secretAccessKey,
+        region: creds.region || 'us-east-1',
+        isLocalStack: creds.isLocalStack || false,
+        endpoint: endpoint
       });
       
-      setCredentials(creds);
-      setAWSContextCredentials(creds);
-      
-      // Perform scan after connection
+      // Perform scan
       const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
       const scanResponse = await axios.post(`${serverUrl}/api/scan`, {
         accessKeyId: creds.accessKeyId,
         secretAccessKey: creds.secretAccessKey,
         region: creds.region || 'us-east-1',
         isLocalStack: creds.isLocalStack || false,
-        endpoint: creds.endpoint || 'http://localhost:4566'
+        endpoint: creds.isLocalStack ? endpoint : undefined
       });
 
       if (scanResponse.status === 200) {
-        console.log('✅ Scan Response received:', {
-          hasAllResources: !!scanResponse.data?.allResources,
-          allResourcesCount: scanResponse.data?.allResources?.length || 0,
-          summary: scanResponse.data?.summary
-        });
+        console.log('✅ Scan successful');
         setData(scanResponse.data);
-        setIsAuthenticated(true);
-        console.log('✅ Connection successful');
       }
     } catch (error: any) {
       console.error('Error connecting:', error);
       alert(`Connection error: ${error.response?.data?.message || error.message}`);
-      setIsAuthenticated(false);
     } finally {
       setLoading(false);
     }
   };
 
-  // ========== Rescan AWS resources with current credentials ==========
   const handleRescan = async () => {
-    console.log('🔍 Rescan triggered. Current credentials state:', {
-      keys: Object.keys(credentials),
-      has_accessKeyId: 'accessKeyId' in credentials,
-      has_secretAccessKey: 'secretAccessKey' in credentials,
-      accessKeyId_value: credentials.accessKeyId,
-      secretAccessKey_value: credentials.secretAccessKey,
-      full_credentials: credentials
-    });
-
-    if (!credentials || !credentials.accessKeyId || !credentials.secretAccessKey) {
-      alert('Требуется подключиться к AWS. Credentials не найдены.');
+    if (!credentials.accessKeyId || !credentials.secretAccessKey) {
+      alert('Credentials not set');
       return;
     }
-    
+
     try {
       setLoading(true);
-      const scanData = {
-        accessKeyId: credentials.accessKeyId,
-        secretAccessKey: credentials.secretAccessKey,
-        region: credentials.region || 'us-east-1',
-        isLocalStack: credentials.isLocalStack || false,
-        endpoint: credentials.endpoint || import.meta.env.VITE_LOCALSTACK_ENDPOINT || 'http://localhost:4566'
-      };
-      
-      console.log('📡 Rescan request data:', scanData);
-      
       const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
-      const scanResponse = await axios.post(`${serverUrl}/api/scan`, scanData);
+      const token = localStorage.getItem('auth_token');
+      
+      // Normalize endpoint for LocalStack
+      let endpoint = credentials.endpoint;
+      if (credentials.isLocalStack && endpoint) {
+        endpoint = 'http://localhost:4566';
+      }
+      
+      const response = await axios.post(
+        `${serverUrl}/api/scan`,
+        {
+          accessKeyId: credentials.accessKeyId,
+          secretAccessKey: credentials.secretAccessKey,
+          region: credentials.region || 'us-east-1',
+          isLocalStack: credentials.isLocalStack || false,
+          endpoint: credentials.isLocalStack ? endpoint : undefined
+        },
+        token ? { headers: { Authorization: `Bearer ${token}` } } : {}
+      );
 
-      if (scanResponse.status === 200) {
-        setData(scanResponse.data);
-        alert('✅ Сканирование завершено успешно');
+      if (response.status === 200) {
+        console.log('✅ Rescan completed');
+        setData(response.data);
       }
     } catch (error: any) {
-      console.error('Error rescanning:', error);
-      console.error('Error details:', {
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message
-      });
-      alert(`Ошибка при переповторе сканирования: ${error.response?.data?.message || error.message}`);
+      console.error('Rescan error:', error);
+      alert(`Rescan error: ${error.response?.data?.message || error.message}`);
     } finally {
       setLoading(false);
     }
   };
 
   const handleLogout = () => {
-    setIsAuthenticated(false);
-    setCredentials(null);
-    setData(null);
+    logout();
     setCurrentPage('dashboard');
   };
 
-  const handleNavigateWithSecurityView = (page: 'dashboard' | 'resources' | 'security' | 'settings', viewMode?: 'alerts' | 'logs') => {
-    if (viewMode) {
-      setSecurityViewMode(viewMode);
-    }
+  const handleNavigateWithSecurityView = (page: any, view?: 'alerts' | 'logs') => {
     setCurrentPage(page);
+    if (view) {
+      setSecurityViewMode(view);
+    }
+    // Navigate to the page using React Router
+    if (page === 'security') {
+      navigate('/security');
+    } else if (page === 'resources') {
+      navigate('/resources');
+    } else if (page === 'dashboard') {
+      navigate('/dashboard');
+    } else if (page === 'settings') {
+      navigate('/settings');
+    }
   };
 
   return (
-    <>
-      {!isAuthenticated ? (
-        <LoginPage onConnect={handleConnect} />
-      ) : (
-        <div className="min-h-screen bg-[#0B0C10] flex flex-col relative z-0">
-          
-          <Header 
-            currentPage={currentPage}
-            onPageChange={setCurrentPage}
-            onLogout={handleLogout}
-          />
+    <Routes>
+      {/* Auth Routes */}
+      <Route path="/login" element={<LoginPage onConnect={handleConnect} />} />
+      <Route path="/register" element={<RegisterPage onRegisterSuccess={() => {}} />} />
 
-          {/* Тот самый прямоугольник на заднем фоне (265px высотой, цвет #181921) */}
-          <div className="absolute top-0 left-0 w-full h-[300px] bg-[#181921] -z-10 pointer-events-none" />
+      {/* Protected Dashboard Routes */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute isAuthenticated={isAuthenticated} isLoading={isAppLoading}>
+            <DashboardLayout
+              currentPage={currentPage}
+              onPageChange={setCurrentPage}
+              onLogout={handleLogout}
+              isAIModalOpen={isAIModalOpen}
+            >
+              <NewDashboard loading={loading} data={data} onRescan={handleRescan} onPageChange={handleNavigateWithSecurityView} onAIModalStateChange={setIsAIModalOpen} />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
 
-          {/* Увеличенный отступ, чтобы было больше места между Хедером и контентом */}
-          <div className="pt-[160px] flex-1 z-10">
-            {currentPage === 'dashboard' && <NewDashboard loading={loading} data={data} onRescan={handleRescan} onPageChange={handleNavigateWithSecurityView} />}
-            {currentPage === 'resources' && <NewResourcesPage data={data} onPageChange={handleNavigateWithSecurityView} />}
-            {currentPage === 'security' && <SecurityPage data={data} initialView={securityViewMode} onPageChange={handleNavigateWithSecurityView} />}
-            {currentPage === 'settings' && <SettingsPage />}
-          </div>
-          
-        </div>
-      )}
-    </>
+      <Route
+        path="/resources"
+        element={
+          <ProtectedRoute isAuthenticated={isAuthenticated} isLoading={isAppLoading}>
+            <DashboardLayout
+              currentPage="resources"
+              onPageChange={setCurrentPage}
+              onLogout={handleLogout}
+              isAIModalOpen={isAIModalOpen}
+            >
+              <NewResourcesPage data={data} onPageChange={handleNavigateWithSecurityView} onAIModalStateChange={setIsAIModalOpen} />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/security"
+        element={
+          <ProtectedRoute isAuthenticated={isAuthenticated} isLoading={isAppLoading}>
+            <DashboardLayout
+              currentPage="security"
+              onPageChange={setCurrentPage}
+              onLogout={handleLogout}
+              isAIModalOpen={isAIModalOpen}
+            >
+              <SecurityPage data={data} initialView={securityViewMode} onPageChange={handleNavigateWithSecurityView} onAIModalStateChange={setIsAIModalOpen} />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute isAuthenticated={isAuthenticated} isLoading={isAppLoading}>
+            <DashboardLayout
+              currentPage="settings"
+              onPageChange={setCurrentPage}
+              onLogout={handleLogout}
+              isAIModalOpen={isAIModalOpen}
+            >
+              <SettingsPage onAIModalStateChange={setIsAIModalOpen} />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Root redirect */}
+      <Route
+        path="/"
+        element={
+          isAuthenticated ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+
+      {/* Catch-all - redirect to home */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
-
-export default App;

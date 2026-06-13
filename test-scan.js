@@ -7,7 +7,7 @@ const payload = {
     secretAccessKey: 'test',
     region: 'us-east-1',
     isLocalStack: true,
-    endpoint: 'http://localhost:4566'
+    endpoint: 'http://10.0.2.15:4566'
 };
 
 console.log('📤 Sending POST request to /api/scan...');

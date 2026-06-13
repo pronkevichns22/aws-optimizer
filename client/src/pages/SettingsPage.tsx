@@ -23,6 +23,7 @@ import { DashboardSidebar } from '../components/Layout/DashboardSidebar';
 interface SettingsPageProps {
   data?: any;
   onPageChange?: (page: 'dashboard' | 'resources' | 'security' | 'settings', viewMode?: 'alerts' | 'logs') => void;
+  onAIModalStateChange?: (isOpen: boolean) => void;
 }
 
 // ========== Toggle Switch Component ==========
@@ -50,7 +51,7 @@ const ToggleSwitch = ({
 };
 
 // ========== Settings Page Component ==========
-export const SettingsPage = ({ onPageChange }: SettingsPageProps) => {
+export const SettingsPage = ({ onPageChange, onAIModalStateChange }: SettingsPageProps) => {
   const { credentials, setCredentials } = useAWS();
   
   // Cloud Environment Configuration State
@@ -58,6 +59,7 @@ export const SettingsPage = ({ onPageChange }: SettingsPageProps) => {
   const [secretKey, setSecretKey] = useState<string>(credentials?.secretAccessKey || '');
   const [region, setRegion] = useState<string>(credentials?.region || 'us-east-1');
   const [useLocalStack, setUseLocalStack] = useState<boolean>(credentials?.isLocalStack || false);
+  // For VirtualBox VM with port forwarding: Use localhost:4566 (127.0.0.1:4566 → VM:4566)
   const [localStackEndpoint, setLocalStackEndpoint] = useState<string>(
     localStorage.getItem('localstack_endpoint') || 'http://localhost:4566'
   );
@@ -87,8 +89,9 @@ export const SettingsPage = ({ onPageChange }: SettingsPageProps) => {
 
   // ========== Save Cloud Environment Configuration ==========
   const handleSaveConnectionSettings = () => {
-    if (!accessKey.trim() || !secretKey.trim()) {
-      showNotification('error', 'Access Key and Secret Key are required');
+    // For AWS mode, credentials are required
+    if (!useLocalStack && (!accessKey.trim() || !secretKey.trim())) {
+      showNotification('error', 'Access Key and Secret Key are required for AWS mode');
       return;
     }
 
@@ -100,6 +103,7 @@ export const SettingsPage = ({ onPageChange }: SettingsPageProps) => {
       secretAccessKey: finalSecretKey,
       region,
       isLocalStack: useLocalStack,
+      endpoint: useLocalStack ? localStackEndpoint : undefined,
     };
 
     setCredentials(newCredentials);
@@ -162,6 +166,7 @@ export const SettingsPage = ({ onPageChange }: SettingsPageProps) => {
           onExport={() => {}}
           alerts={[]}
           data={undefined}
+          onAIModalStateChange={onAIModalStateChange}
         />
 
         {/* Main Content */}
@@ -246,7 +251,6 @@ export const SettingsPage = ({ onPageChange }: SettingsPageProps) => {
                   className="text-[#818CA2] hover:text-[#47B2FF] transition text-xs mt-1 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                 >
                   {showAccessKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                  {useLocalStack ? 'Auto-filled in Dev Mode' : 'Toggle visibility'}
                 </button>
               </div>
 
@@ -319,6 +323,7 @@ export const SettingsPage = ({ onPageChange }: SettingsPageProps) => {
                     placeholder="http://localhost:4566"
                     className="w-full bg-[#0F1117] border border-[#242732] rounded-[12px] px-4 py-3 text-white placeholder-[#818CA2] focus:outline-none focus:border-[#47B2FF] focus:ring-1 focus:ring-[#47B2FF]/30 transition hover:border-[#404854] font-mono text-sm"
                   />
+                  <p className="text-[#818CA2] text-xs mt-2">💡 <span className="text-[#47B2FF]">VirtualBox port forwarding</span>: 127.0.0.1:4566 → VM:4566</p>
                 </div>
               )}
             </div>
@@ -327,7 +332,7 @@ export const SettingsPage = ({ onPageChange }: SettingsPageProps) => {
             <div className="flex gap-3 mt-6 pt-6 border-t border-[#242732]">
               <button
                 onClick={handleSaveConnectionSettings}
-                disabled={!accessKey.trim() || !secretKey.trim()}
+                disabled={!useLocalStack && (!accessKey.trim() || !secretKey.trim())}
                 className="flex-1 bg-[#47B2FF] hover:bg-[#3FA0E8] disabled:bg-[#818ca2]/50 disabled:cursor-not-allowed text-white font-bold py-2.5 px-4 rounded-[12px] transition-all transform hover:scale-[1.01] active:scale-[0.98] flex items-center justify-center gap-2 text-sm"
               >
                 <Save size={16} />

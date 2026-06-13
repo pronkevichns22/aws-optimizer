@@ -4,16 +4,15 @@
 // PURPOSE: Dashboard sidebar with action buttons (rescan, export, logs)
 // ============================================================================
 
-import React, { useState } from 'react';
-import { Radar, Archive, FileDown } from 'lucide-react';
+import React from 'react';
+import { Radar, AlertCircle, FileDown } from 'lucide-react';
 import { AIAdvisor } from '../AIAdvisor';
-import { AIAdvisorModal } from '../AIAdvisorModal';
 
 // ========== Type definition for action buttons ==========
 interface ActionButton {
   label: string;
   icon: React.ElementType;
-  action: 'rescan' | 'cleanup' | 'export';
+  action: 'rescan' | 'toggle-view' | 'export';
 }
 
 interface DashboardSidebarProps {
@@ -25,6 +24,8 @@ interface DashboardSidebarProps {
   onToggleView?: () => void;
   alerts?: any[];
   data?: any;
+  currentView?: 'alerts' | 'logs';
+  onAIModalStateChange?: (isOpen: boolean) => void;
 }
 
 export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
@@ -35,10 +36,9 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
   currentPage,
   onToggleView,
   alerts = [],
-  data
+  data,
+  onAIModalStateChange
 }) => {
-  // State for premium AI Advisor modal
-  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   
   // Extract resource count and total cost from data
   const resourceCount = data?.allResources?.length || 
@@ -49,9 +49,15 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
                         0;
   
   const totalCost = data?.totalSpend || data?.costBreakdown?.total || 0;
+  
+  // Dynamic actions based on current view
   const actions: ActionButton[] = [
     { label: 'Rescan', icon: Radar, action: 'rescan' },
-    { label: 'Logs', icon: Archive, action: 'cleanup' },
+    { 
+      label: 'Alerts', 
+      icon: AlertCircle, 
+      action: 'toggle-view' 
+    },
     { label: 'Export', icon: FileDown, action: 'export' }
   ];
 
@@ -67,7 +73,7 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
       case 'rescan':
         onRescan?.();
         break;
-      case 'cleanup':
+      case 'toggle-view':
         // If already on security page, toggle the view
         if (currentPage === 'security') {
           onToggleView?.();
@@ -111,16 +117,7 @@ export const DashboardSidebar: React.FC<DashboardSidebarProps> = ({
         data={data} 
         resourceCount={resourceCount} 
         totalCost={totalCost}
-        onOpenModal={() => setIsAIModalOpen(true)}
-      />
-
-      {/* Premium AI Advisor Modal */}
-      <AIAdvisorModal
-        isOpen={isAIModalOpen}
-        onClose={() => setIsAIModalOpen(false)}
-        alerts={alerts}
-        resourceCount={resourceCount}
-        totalCost={totalCost}
+        onAIModalStateChange={onAIModalStateChange}
       />
     </aside>
   );

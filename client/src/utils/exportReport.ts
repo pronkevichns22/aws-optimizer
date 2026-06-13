@@ -401,4 +401,7 @@ export const downloadReport = (options: ExportOptions): void => {
   link.click();
   document.body.removeChild(link);
   window.URL.revokeObjectURL(url);
+  
+  // Show success feedback to user
+  alert(`✅ Report exported successfully!\n\nFile: ${options.filename}`);
 };

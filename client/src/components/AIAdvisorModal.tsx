@@ -9,7 +9,12 @@ import { X, Send, Plus, Trash2, MessageSquare, Zap, Loader2 } from 'lucide-react
 import axios from 'axios';
 
 const LOGO_STYLE = { fontFamily: "'Albert Sans', sans-serif", fontWeight: 700 };
-const TEXT_STYLE = { fontFamily: "'Albert Sans', sans-serif", fontWeight: 500 };
+const TEXT_STYLE = { 
+  fontFamily: "'Albert Sans', sans-serif", 
+  fontWeight: 500,
+  scrollbarWidth: 'none' as const,
+  msOverflowStyle: 'none' as any
+};
 
 // Types
 interface ChatMessage {
@@ -33,6 +38,10 @@ interface AIAdvisorModalProps {
   resourceCount?: number;
   totalCost?: number;
   infrastructureContext?: string;
+  chatSessions?: ChatSession[];
+  currentChatId?: string;
+  onChatSessionsChange?: (sessions: ChatSession[]) => void;
+  onCurrentChatIdChange?: (chatId: string) => void;
 }
 
 // Utility: Format markdown in messages (basic formatting)
@@ -55,7 +64,7 @@ const ChatHistorySidebar: React.FC<{
   onDeleteChat: (id: string) => void;
 }> = ({ chats, activeId, onSelectChat, onNewChat, onDeleteChat }) => {
   return (
-    <div className="w-72 bg-[#181921] border-r border-[#242732] flex flex-col h-full">
+    <div className="w-56 sm:w-64 bg-[#181921] border-r border-[#242732] flex flex-col h-full min-w-0">
       {/* New Chat Button */}
       <div className="p-4 border-b border-[#242732] flex-shrink-0">
         <button
@@ -69,7 +78,7 @@ const ChatHistorySidebar: React.FC<{
       </div>
 
       {/* Chat List */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2 scrollbar-hide">
         {chats.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
             <MessageSquare size={28} className="text-slate-500" />
@@ -88,9 +97,9 @@ const ChatHistorySidebar: React.FC<{
               }`}
               onClick={() => onSelectChat(chat.id)}
             >
-              <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start justify-between gap-2 min-w-0">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-slate-200 truncate font-medium" style={TEXT_STYLE}>
+                  <p className="text-sm text-slate-200 truncate font-medium break-words" style={TEXT_STYLE}>
                     {chat.title}
                   </p>
                   <p className="text-xs text-slate-500 mt-0.5">
@@ -137,9 +146,9 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
   const isUser = message.role === 'user';
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fadeInUp`}>
       <div
-        className={`max-w-2xl px-6 py-4 rounded-2xl text-sm leading-relaxed ${
+        className={`max-w-2xl px-6 py-4 rounded-2xl text-sm leading-relaxed transition-all duration-300 ${
           isUser
             ? 'bg-indigo-600/20 border border-indigo-500/30 text-indigo-100 rounded-br-none'
             : 'bg-[#1f2029] border border-[#242732] text-slate-200 rounded-bl-none'
@@ -196,9 +205,9 @@ const ChatArea: React.FC<{
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-[#13141b] relative overflow-hidden">
+    <div className="flex-1 flex flex-col bg-[#13141b] relative overflow-hidden min-w-0">
       {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto px-8 py-8 space-y-6">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-8 space-y-6 scrollbar-hide">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center gap-8">
             <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 flex items-center justify-center">
@@ -216,7 +225,7 @@ const ChatArea: React.FC<{
         ) : (
           <>
             {messages.map((msg, idx) => (
-              <MessageBubble key={idx} message={msg} />
+              <MessageBubble key={`${msg.role}-${msg.timestamp?.toString() ?? idx}`} message={msg} />
             ))}
             {isLoading && (
               <div className="flex justify-start">
@@ -234,7 +243,7 @@ const ChatArea: React.FC<{
       </div>
 
       {/* Input Area - Pinned to Bottom */}
-      <div className="border-t border-[#242732] px-8 py-6 bg-[#13141b] flex-shrink-0">
+      <div className="border-t border-[#242732] px-4 sm:px-8 py-6 bg-[#13141b] flex-shrink-0">
         <div className="flex gap-3 items-end">
           <textarea
             ref={inputRef}
@@ -242,8 +251,8 @@ const ChatArea: React.FC<{
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Ask about your infrastructure, costs, security..."
-            className="flex-1 bg-[#1f2029] hover:bg-[#242732] border border-[#242732] hover:border-[#2d3742] focus:border-indigo-500 focus:bg-[#0f1117] rounded-2xl px-5 py-3.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all resize-none focus:ring-2 focus:ring-indigo-500/20"
-            style={TEXT_STYLE}
+            className="flex-1 bg-[#1f2029] hover:bg-[#242732] border border-[#242732] hover:border-[#2d3742] focus:border-indigo-500 focus:bg-[#0f1117] rounded-2xl px-5 py-3.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all duration-200 resize-none focus:ring-2 focus:ring-indigo-500/20 scrollbar-hide"
+            style={{ ...TEXT_STYLE, overflow: 'hidden' }}
             rows={1}
             autoFocus
             disabled={isLoading}
@@ -251,8 +260,9 @@ const ChatArea: React.FC<{
           <button
             onClick={handleSend}
             disabled={!inputValue.trim() || isLoading}
-            className="p-3.5 text-white bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-slate-700 disabled:to-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl transition-all flex-shrink-0 shadow-lg hover:shadow-xl disabled:shadow-none"
-            title="Send (Enter)"
+            className="p-3.5 text-white bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:from-slate-700 disabled:to-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-2xl transition-all duration-200 flex-shrink-0 shadow-lg hover:shadow-xl disabled:shadow-none hover:scale-105 active:scale-95"
+            title="Send message (Enter)"
+            aria-label="Send message"
           >
             <Send size={20} className="rotate-45" />
           </button>
@@ -276,28 +286,52 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
   resourceCount = 0,
   totalCost = 0,
   infrastructureContext = '',
+  chatSessions: propChatSessions,
+  currentChatId: propCurrentChatId,
+  onChatSessionsChange,
+  onCurrentChatIdChange,
 }) => {
-  const [chats, setChats] = useState<ChatSession[]>([]);
+  const [chats, setChats] = useState<ChatSession[]>(propChatSessions || []);
   const [activeChat, setActiveChat] = useState<ChatSession | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Initialize chats from localStorage on mount
+  // Use passed-in chat sessions or fall back to local state
+  const effectiveChats = propChatSessions !== undefined ? propChatSessions : chats;
+  const effectiveCurrentChatId = propCurrentChatId !== undefined ? propCurrentChatId : (activeChat?.id || '');
+
+  // Initialize activeChat based on props or local state
   useEffect(() => {
-    if (isOpen && chats.length === 0) {
-      const saved = localStorage.getItem('ai-advisor-chats');
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          setChats(parsed);
-          setActiveChat(parsed[0]);
-        } catch (e) {
+    if (isOpen) {
+      if (propChatSessions && propChatSessions.length > 0) {
+        // Find chat by currentChatId or use first one
+        const chatToActivate = propCurrentChatId 
+          ? propChatSessions.find(c => c.id === propCurrentChatId) || propChatSessions[0]
+          : propChatSessions[0];
+        setActiveChat(chatToActivate || null);
+      } else if (chats.length === 0) {
+        // Fallback to localStorage if no props provided
+        const saved = localStorage.getItem('ai-advisor-chats');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            setChats(parsed);
+            setActiveChat(parsed[0]);
+          } catch (e) {
+            createNewChat();
+          }
+        } else {
           createNewChat();
         }
-      } else {
-        createNewChat();
       }
     }
-  }, [isOpen]);
+  }, [isOpen, propChatSessions, propCurrentChatId]);
+
+  // Ensure activeChat is set if it's null but chats exist
+  useEffect(() => {
+    if (isOpen && !activeChat && chats.length > 0) {
+      setActiveChat(chats[0]);
+    }
+  }, [isOpen, activeChat, chats]);
 
   // Save chats to localStorage whenever they change
   useEffect(() => {
@@ -306,17 +340,31 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
     }
   }, [chats]);
 
-  // Control body scroll when modal is open
+  // Control body scroll when modal is open + Escape key handler
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
+      
+      // Handle Escape key
+      const handleEscapeKey = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose();
+        }
+      };
+      
+      document.addEventListener('keydown', handleEscapeKey);
+      return () => {
+        document.removeEventListener('keydown', handleEscapeKey);
+        document.body.style.overflow = 'unset';
+      };
     } else {
       document.body.style.overflow = 'unset';
     }
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   const createNewChat = useCallback(() => {
     const newChat: ChatSession = {
@@ -326,23 +374,47 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    setChats((prev) => [newChat, ...prev]);
+    
+    const updatedChats = [newChat, ...effectiveChats];
+    setChats(updatedChats);
     setActiveChat(newChat);
-  }, []);
+    
+    // Notify parent if props provided
+    if (onChatSessionsChange) {
+      onChatSessionsChange(updatedChats);
+    }
+    if (onCurrentChatIdChange) {
+      onCurrentChatIdChange(newChat.id);
+    }
+  }, [effectiveChats, onChatSessionsChange, onCurrentChatIdChange]);
 
   const handleSelectChat = useCallback((id: string) => {
-    const chat = chats.find((c) => c.id === id);
+    const chat = effectiveChats.find((c) => c.id === id);
     if (chat) {
       setActiveChat(chat);
+      if (onCurrentChatIdChange) {
+        onCurrentChatIdChange(id);
+      }
     }
-  }, [chats]);
+  }, [effectiveChats, onCurrentChatIdChange]);
 
   const handleDeleteChat = useCallback((id: string) => {
-    setChats((prev) => prev.filter((c) => c.id !== id));
+    const updatedChats = effectiveChats.filter((c) => c.id !== id);
+    setChats(updatedChats);
+    
     if (activeChat?.id === id) {
-      setActiveChat(chats.find((c) => c.id !== id) || null);
+      const nextChat = updatedChats[0] || null;
+      setActiveChat(nextChat);
+      if (onCurrentChatIdChange) {
+        onCurrentChatIdChange(nextChat?.id || '');
+      }
     }
-  }, [activeChat, chats]);
+    
+    // Notify parent if props provided
+    if (onChatSessionsChange) {
+      onChatSessionsChange(updatedChats);
+    }
+  }, [activeChat, effectiveChats, onChatSessionsChange, onCurrentChatIdChange]);
 
   const handleSendMessage = useCallback(async (message: string) => {
     if (!activeChat || !message.trim()) return;
@@ -361,9 +433,11 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
     };
 
     setActiveChat(updatedChat);
-    setChats((prev) =>
-      prev.map((c) => (c.id === activeChat.id ? updatedChat : c))
-    );
+    let newChats = effectiveChats.map((c) => (c.id === activeChat.id ? updatedChat : c));
+    setChats(newChats);
+    if (onChatSessionsChange) {
+      onChatSessionsChange(newChats);
+    }
 
     setIsLoading(true);
 
@@ -393,9 +467,11 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
       };
 
       setActiveChat(finalChat);
-      setChats((prev) =>
-        prev.map((c) => (c.id === activeChat.id ? finalChat : c))
-      );
+      newChats = effectiveChats.map((c) => (c.id === activeChat.id ? finalChat : c));
+      setChats(newChats);
+      if (onChatSessionsChange) {
+        onChatSessionsChange(newChats);
+      }
 
       // Update chat title if it's the first message
       if (updatedChat.messages.length === 1) {
@@ -404,9 +480,11 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
           title: message.substring(0, 50) + (message.length > 50 ? '...' : ''),
         };
         setActiveChat(titleChat);
-        setChats((prev) =>
-          prev.map((c) => (c.id === activeChat.id ? titleChat : c))
-        );
+        newChats = effectiveChats.map((c) => (c.id === activeChat.id ? titleChat : c));
+        setChats(newChats);
+        if (onChatSessionsChange) {
+          onChatSessionsChange(newChats);
+        }
       }
     } catch (error) {
       console.error('Failed to get AI response:', error);
@@ -423,55 +501,75 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
       };
 
       setActiveChat(errorChat);
-      setChats((prev) =>
-        prev.map((c) => (c.id === activeChat.id ? errorChat : c))
-      );
+      newChats = effectiveChats.map((c) => (c.id === activeChat.id ? errorChat : c));
+      setChats(newChats);
+      if (onChatSessionsChange) {
+        onChatSessionsChange(newChats);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [activeChat, alerts, resourceCount, totalCost, infrastructureContext]);
+  }, [activeChat, effectiveChats, alerts, resourceCount, totalCost, infrastructureContext, onChatSessionsChange]);
 
   if (!isOpen) return null;
 
   return (
     <>
-      {/* Backdrop Overlay - Covers Everything */}
+      {/* Backdrop Overlay - Dark background with reduced opacity */}
       <div
-        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/70 transition-opacity duration-300 ease-out"
+        style={{ zIndex: 9998 }}
         onClick={onClose}
       />
 
-      {/* Modal Dialog Window */}
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none p-4">
-        <div className="w-full max-w-[1200px] h-[80vh] min-h-[600px] bg-[#13141b] border border-[#242732] rounded-[24px] shadow-2xl flex overflow-hidden relative pointer-events-auto">
+      {/* Modal Dialog Window Container - Full viewport */}
+      <div 
+        className="fixed inset-0 flex items-center justify-center p-2 sm:p-4 md:p-6 transition-opacity duration-300 ease-out"
+        style={{ zIndex: 9999, pointerEvents: 'none' }}
+      >
+        {/* Modal Content - Interactive with smooth animation */}
+        <div 
+          className="w-full max-w-3xl max-h-[85vh] min-h-[500px] bg-[#13141b] border border-[#242732] rounded-[24px] shadow-2xl flex flex-row overflow-hidden relative transition-all duration-300 ease-out animate-in modal-content"
+          style={{ 
+            pointerEvents: 'auto', 
+            zIndex: 99999, 
+            position: 'relative',
+            animation: 'modalSlideIn 0.3s ease-out',
+            scrollbarWidth: 'none'
+          }}
+        >
           
-          {/* Close Button - Absolute Top Right */}
+          {/* Close Button - Absolute Top Right with improved styling */}
           <button
             onClick={onClose}
-            className="absolute top-6 right-6 z-50 p-2 bg-[#242732] rounded-full hover:bg-rose-500 hover:text-white transition-colors cursor-pointer"
-            title="Close (Esc)"
+            className="absolute top-6 right-6 z-50 p-2 bg-[#242732] rounded-full hover:bg-rose-500/80 hover:text-white transition-all duration-200 cursor-pointer hover:scale-110 active:scale-95"
+            title="Close modal (Esc)"
+            aria-label="Close AI Advisor modal"
           >
             <X size={24} className="text-slate-300" />
           </button>
 
           {/* Header */}
-          <div className="absolute top-0 left-0 right-0 h-16 bg-[#13141b] border-b border-[#242732] flex items-center px-8 z-10">
+          <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-[#13141b] to-[#13141b]/95 border-b border-[#242732] flex items-center px-8 z-10">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
                 <Zap size={18} className="text-white" />
               </div>
-              <span className="text-lg font-bold text-slate-100" style={LOGO_STYLE}>
-                CloudOpti AI
-              </span>
+              <div className="flex flex-col">
+                <span className="text-lg font-bold text-slate-100" style={LOGO_STYLE}>
+                  CloudOpti AI
+                </span>
+                <span className="text-xs text-slate-500" style={TEXT_STYLE}>Powered by Groq</span>
+              </div>
             </div>
           </div>
 
           {/* Content Area - With top padding for header */}
-          <div className="flex w-full pt-16 overflow-hidden">
+          <div className="flex w-full flex-1 pt-16 overflow-hidden min-h-0">
             {/* Sidebar */}
             {activeChat && (
               <ChatHistorySidebar
-                chats={chats}
+                chats={effectiveChats}
                 activeId={activeChat.id}
                 onSelectChat={handleSelectChat}
                 onNewChat={createNewChat}
@@ -513,6 +611,77 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
           to {
             opacity: 1;
           }
+        }
+
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes modalSlideIn {
+          from {
+            opacity: 0;
+            transform: scale(0.95) translateY(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+          }
+        }
+
+        .animate-fadeInUp {
+          animation: fadeInUp 0.3s ease-out;
+        }
+
+        .animate-in {
+          animation: modalSlideIn 0.3s ease-out;
+        }
+
+        /* Hide scrollbars everywhere */
+        * {
+          scrollbar-width: none !important;
+          -ms-overflow-style: none !important;
+        }
+        *::-webkit-scrollbar {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+        
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+        textarea::-webkit-scrollbar {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+        .scrollbar-hide {
+          -ms-overflow-style: none !important;
+          scrollbar-width: none !important;
+        }
+        textarea {
+          -ms-overflow-style: none !important;
+          scrollbar-width: none !important;
+        }
+        
+        /* Global scrollbar hiding for modal */
+        .modal-content::-webkit-scrollbar {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+        .modal-content {
+          -ms-overflow-style: none !important;
+          scrollbar-width: none !important;
         }
       `}</style>
     </>

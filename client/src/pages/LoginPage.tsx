@@ -1,60 +1,54 @@
 // ============================================================================
 // FILE: LoginPage.tsx
 // LOCATION: client/src/pages/
-// PURPOSE: AWS authentication page for entering credentials
+// PURPOSE: User authentication page for email/password login
 // ============================================================================
 
-import { useState, useEffect, useRef } from 'react';
-import { Cloud, Eye, EyeOff, ArrowRight, Settings } from 'lucide-react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Cloud, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import axios from 'axios';
+import { useAWS } from '../context/AWSContext';
 
-// ========== List of AWS regions available for connection ==========
-const AWS_REGIONS = [
-  'us-east-1',
-  'us-east-2',
-  'us-west-1',
-  'us-west-2',
-  'eu-west-1',
-  'eu-west-2',
-  'eu-west-3',
-  'eu-central-1',
-  'eu-north-1',
-  'ap-southeast-1',
-  'ap-southeast-2',
-  'ap-northeast-1',
-  'ap-northeast-2',
-  'ap-northeast-3',
-  'ap-south-1',
-  'ca-central-1',
-  'sa-east-1',
-  'af-south-1',
-  'me-south-1',
-];
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+console.log('🌐 API_BASE_URL:', API_BASE_URL, 'from VITE_API_URL:', import.meta.env.VITE_API_URL);
+
+// Setup axios interceptors for debugging
+axios.interceptors.request.use(
+  config => {
+    console.log('📤 Axios Request:', config.method?.toUpperCase(), config.url, config.data);
+    return config;
+  },
+  error => {
+    console.error('❌ Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+axios.interceptors.response.use(
+  response => {
+    console.log('📥 Axios Response:', response.status, response.data);
+    return response;
+  },
+  error => {
+    console.error('❌ Response Error:', error.message, error.response?.status, error.response?.data);
+    return Promise.reject(error);
+  }
+);
 
 export const LoginPage = ({ onConnect }: { onConnect?: (credentials: any) => void }) => {
+  const navigate = useNavigate();
+  const { setToken, setUser } = useAWS();
+  const [isRegister, setIsRegister] = useState(false);
   const [credentials, setCredentials] = useState({
-    accessKeyId: '',
-    secretAccessKey: '',
-    region: 'us-east-1',
+    email: '',
+    password: '',
+    confirmPassword: '',
   });
-  const [showSecret, setShowSecret] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showRegionDropdown, setShowRegionDropdown] = useState(false);
-  const [regionSearch, setRegionSearch] = useState('');
-  const [regionSelected, setRegionSelected] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowRegionDropdown(false);
-      }
-    };
-
-    if (showRegionDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showRegionDropdown]);
+  const [error, setError] = useState('');
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -64,67 +58,104 @@ export const LoginPage = ({ onConnect }: { onConnect?: (credentials: any) => voi
     }));
   };
 
-  const filteredRegions = AWS_REGIONS.filter(region =>
-    region.toLowerCase().includes(regionSearch.toLowerCase())
-  );
+  const handleLogin = async () => {
+    if (isRegister) {
+      // Register mode
+      if (!credentials.email || !credentials.password || !credentials.confirmPassword) {
+        setError('Please fill in all fields');
+        return;
+      }
+      if (credentials.password.length < 8) {
+        setError('Password must be at least 8 characters');
+        return;
+      }
+      if (credentials.password !== credentials.confirmPassword) {
+        setError('Passwords do not match');
+        return;
+      }
 
-  const handleRegionSelect = (region: string) => {
-    setCredentials(prev => ({
-      ...prev,
-      region
-    }));
-    setRegionSelected(true);
-    setShowRegionDropdown(false);
-    setRegionSearch('');
+      setLoading(true);
+      setError('');
+      
+      try {
+        console.log('📝 Register attempt with:', { email: credentials.email });
+        console.log('🌐 Using API URL:', API_BASE_URL);
+        
+        const response = await axios.post(`${API_BASE_URL}/auth/register`, {
+          username: credentials.email.split('@')[0],
+          email: credentials.email,
+          password: credentials.password,
+          confirmPassword: credentials.confirmPassword,
+        });
+
+        const { data } = response.data;
+        setToken(data.token);
+        setUser(data);
+        
+        // For registration, skip AWS connection (user will set up credentials in Settings)
+        // For login, connect to AWS if onConnect is provided
+        if (!isRegister && onConnect) {
+          await onConnect({ region: 'us-east-1' });
+          console.log('✅ Register callback completed');
+        }
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.message || 'Registration failed';
+        setError(errorMessage);
+        console.error('Register error:', err);
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Login mode
+      if (!credentials.email || !credentials.password) {
+        setError('Please enter both email and password');
+        return;
+      }
+
+      setLoading(true);
+      setError('');
+      
+      try {
+        console.log('🔐 Login attempt with:', { email: credentials.email });
+        console.log('🌐 Using API URL:', API_BASE_URL);
+        
+        const response = await axios.post(`${API_BASE_URL}/auth/login`, {
+          email: credentials.email,
+          password: credentials.password,
+        });
+
+        const { data } = response.data;
+        console.log('✅ Server response:', { data });
+        setToken(data.token);
+        setUser(data);
+        
+        // User successfully logged in - will proceed to dashboard
+        console.log('✅ Login successful');
+        
+        // Redirect to dashboard
+        setTimeout(() => {
+          console.log('🔀 Redirecting to /dashboard');
+          navigate('/dashboard');
+        }, 500);
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.message || 'Login failed';
+        setError(errorMessage);
+        console.error('Login error:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
-  const handleConnect = async () => {
-    if (!credentials.accessKeyId || !credentials.secretAccessKey) {
-      alert('Please enter both Access Key ID and Secret Access Key');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      console.log('☁️ AWS connection attempt with:', credentials);
-      
-      if (onConnect) {
-        await onConnect(credentials);
-        console.log('✅ AWS connection callback completed');
-      } else {
-        console.log('Connecting with:', credentials);
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (isRegister) {
+      if (e.key === 'Enter' && !loading && credentials.email && credentials.password && credentials.confirmPassword) {
+        handleLogin();
       }
-    } catch (error) {
-      console.error('Connection error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLocalStackConnect = async () => {
-    setLoading(true);
-    try {
-      const localstackEndpoint = import.meta.env.VITE_LOCALSTACK_ENDPOINT || 'http://localhost:4566';
-      
-      // LocalStack использует дефолтные test credentials
-      const localstackCreds = {
-        accessKeyId: credentials.accessKeyId?.trim() || 'test',
-        secretAccessKey: credentials.secretAccessKey?.trim() || 'test',
-        region: credentials.region || 'us-east-1',
-        isLocalStack: true,
-        endpoint: localstackEndpoint
-      };
-      
-      console.log('🐳 LocalStack connection attempt with:', localstackCreds);
-      
-      if (onConnect) {
-        await onConnect(localstackCreds);
-        console.log('✅ LocalStack connection callback completed');
+    } else {
+      if (e.key === 'Enter' && !loading && credentials.email && credentials.password) {
+        handleLogin();
       }
-    } catch (error) {
-      console.error('LocalStack connection error:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -150,55 +181,64 @@ export const LoginPage = ({ onConnect }: { onConnect?: (credentials: any) => voi
               {/* Title section - gap 16 */}
               <div className="w-full flex flex-col gap-4 text-center">
                 <h1 className="text-[18px] sm:text-[20px] font-black text-white leading-tight" style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 900 }}>
-                  Connect AWS Environment
+                  {isRegister ? 'Create Account' : 'Sign In to CloudOpti'}
                 </h1>
                 <p className="text-[13px] sm:text-[14px] text-[#818ca2] leading-[1.05]" style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 500 }}>
-                  Provide your IAM credentials with ReadOnlyAccess. We use a stateless architecture — your keys are never stored in our database.
+                  {isRegister ? 'Create a new account to get started' : 'Enter your credentials to access your AWS dashboard and start optimizing.'}
                 </p>
               </div>
 
               {/* Form section - gap 26 */}
               <div className="w-full flex flex-col gap-[26px]">
                 
-                {/* AWS Credentials section - gap 8 */}
+                {/* Error Message */}
+                {error && (
+                  <div className="w-full px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-[12px] text-red-400 text-[12px]" style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 500 }}>
+                    {error}
+                  </div>
+                )}
+
+                {/* Credentials section - gap 8 */}
                 <div className="w-full flex flex-col gap-2">
                   <label className="text-[11px] sm:text-[12px] text-[#818ca2]" style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 600 }}>
-                    AWS Credentials
+                    Account Credentials
                   </label>
 
                   {/* Form group - gap 8 */}
                   <div className="w-full flex flex-col gap-2">
-                    {/* Access Key ID */}
+                    {/* Email */}
                     <input
-                      type="text"
-                      name="accessKeyId"
-                      placeholder="Access Key ID"
-                      value={credentials.accessKeyId}
+                      type="email"
+                      name="email"
+                      placeholder="Email Address"
+                      value={credentials.email}
                       onChange={handleInputChange}
+                      onKeyPress={handleKeyPress}
                       disabled={loading}
                       className="w-full h-[44px] px-3 py-4 bg-[#1f2029] hover:bg-[#16171d] border border-[#242732] rounded-[16px] text-white text-[12px] placeholder-[#818ca2] focus:outline-none focus:border-[#1a85ff] focus:bg-[#16171d] transition disabled:opacity-50"
                       style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 700 }}
                     />
 
-                    {/* Secret Access Key */}
+                    {/* Password */}
                     <div className="relative">
                       <input
-                        type={showSecret ? 'text' : 'password'}
-                        name="secretAccessKey"
-                        placeholder="Secret Access Key"
-                        value={credentials.secretAccessKey}
+                        type={showPassword ? 'text' : 'password'}
+                        name="password"
+                        placeholder="Password"
+                        value={credentials.password}
                         onChange={handleInputChange}
+                        onKeyPress={handleKeyPress}
                         disabled={loading}
                         className="w-full h-[44px] px-3 py-4 bg-[#1f2029] hover:bg-[#16171d] border border-[#242732] rounded-[16px] text-white text-[12px] placeholder-[#818ca2] focus:outline-none focus:border-[#1a85ff] focus:bg-[#16171d] transition pr-10 disabled:opacity-50"
                         style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 700 }}
                       />
                       <button
                         type="button"
-                        onClick={() => setShowSecret(!showSecret)}
+                        onClick={() => setShowPassword(!showPassword)}
                         disabled={loading}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-[#818ca2] hover:text-white transition disabled:opacity-50"
                       >
-                        {showSecret ? (
+                        {showPassword ? (
                           <EyeOff className="w-4 h-4" />
                         ) : (
                           <Eye className="w-4 h-4" />
@@ -206,73 +246,49 @@ export const LoginPage = ({ onConnect }: { onConnect?: (credentials: any) => voi
                       </button>
                     </div>
 
-                    {/* Region - Dropdown */}
-                    <div className="relative" ref={dropdownRef}>
-                      <button
-                        type="button"
-                        onClick={() => setShowRegionDropdown(!showRegionDropdown)}
-                        disabled={loading}
-                        className="w-full h-[44px] px-3 py-4 bg-[#1f2029] hover:bg-[#16171d] border border-[#242732] rounded-[16px] text-[12px] focus:outline-none focus:border-[#1a85ff] focus:bg-[#16171d] transition disabled:opacity-50 flex items-center text-left"
-                        style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 700, color: !regionSelected ? '#818CA2' : '#ffffff' }}
-                      >
-                        {!regionSelected ? 'Region' : credentials.region}
-                      </button>
-
-                      {showRegionDropdown && (
-                        <div className="absolute top-full mt-2 w-full bg-[#1f2029] border border-[#242732] rounded-[16px] z-50 shadow-lg">
-                          {/* Search input */}
-                          <input
-                            type="text"
-                            placeholder="Search region..."
-                            value={regionSearch}
-                            onChange={(e) => setRegionSearch(e.target.value)}
-                            className="w-full h-[40px] px-3 py-2 bg-[#16171d] border-b border-[#242732] rounded-t-[16px] text-white text-[12px] placeholder-[#818ca2]/60 focus:outline-none"
-                            style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 700 }}
-                            autoFocus
-                          />
-
-                          {/* Regions list */}
-                          <div className="max-h-[200px] overflow-y-auto">
-                            {filteredRegions.length > 0 ? (
-                              filteredRegions.map((region) => (
-                                <button
-                                  key={region}
-                                  type="button"
-                                  onClick={() => handleRegionSelect(region)}
-                                  className={`w-full px-3 py-2 text-left text-[12px] transition ${
-                                    credentials.region === region
-                                      ? 'bg-[#1a85ff] text-white'
-                                      : 'bg-[#1f2029] text-[#818ca2] hover:bg-[#242732]'
-                                  }`}
-                                  style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 400 }}
-                                >
-                                  {region}
-                                </button>
-                              ))
-                            ) : (
-                              <div className="px-3 py-2 text-[12px] text-[#818ca2]">
-                                No regions found
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    {/* Confirm Password - only in register mode */}
+                    {isRegister && (
+                      <div className="relative">
+                        <input
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          name="confirmPassword"
+                          placeholder="Confirm Password"
+                          value={credentials.confirmPassword}
+                          onChange={handleInputChange}
+                          onKeyPress={handleKeyPress}
+                          disabled={loading}
+                          className="w-full h-[44px] px-3 py-4 bg-[#1f2029] hover:bg-[#16171d] border border-[#242732] rounded-[16px] text-white text-[12px] placeholder-[#818ca2] focus:outline-none focus:border-[#1a85ff] focus:bg-[#16171d] transition pr-10 disabled:opacity-50"
+                          style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 700 }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          disabled={loading}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#818ca2] hover:text-white transition disabled:opacity-50"
+                        >
+                          {showConfirmPassword ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Connect Button */}
+                {/* Sign In/Up Button */}
                 <button
-                  onClick={handleConnect}
-                  disabled={loading || !credentials.accessKeyId || !credentials.secretAccessKey}
-                  className="w-full h-[44px] px-3 py-4 bg-[#1a85ff] hover:bg-[#439AFF] disabled:bg-[#1a85ff] border border-[#479DFF] text-white rounded-[16px] transition-colors duration-200 flex items-center justify-center gap-2 text-[11px] sm:text-[12px]"
+                  onClick={handleLogin}
+                  disabled={loading || !credentials.email || !credentials.password || (isRegister && !credentials.confirmPassword)}
+                  className="w-full h-[44px] px-3 py-4 bg-[#1a85ff] hover:bg-[#439AFF] disabled:bg-[#1a85ff]/50 border border-[#479DFF] text-white rounded-[16px] transition-colors duration-200 flex items-center justify-center gap-2 text-[11px] sm:text-[12px]"
                   style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 700 }}
                 >
                   {loading ? (
-                    <span>Connecting...</span>
+                    <span>{isRegister ? 'Creating account...' : 'Signing in...'}</span>
                   ) : (
                     <>
-                      Connect
+                      {isRegister ? 'Sign Up' : 'Sign In'}
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}    
@@ -280,41 +296,37 @@ export const LoginPage = ({ onConnect }: { onConnect?: (credentials: any) => voi
               </div>
             </div>
 
-            {/* Agreement Text */}
-            <div className="w-full flex flex-col text-center px-2">
+            {/* Agreement Text / Mode Switch */}
+            <div className="w-full flex flex-col text-center px-2 gap-1">
               <p className="text-[9px] sm:text-[10px] text-[#818ca2]/80 leading-[1.1]" style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 400 }}>
-                By connecting, you agree to our
-                <br />
-                <span className="text-[#98a5bd] hover:text-white transition cursor-pointer" style={{ fontWeight: 500 }}>
-                  Terms of Service & Privacy Policy
-                </span>
+                {isRegister ? 'Already have an account?' : 'or'}
               </p>
+              {isRegister ? (
+                <button
+                  onClick={() => {
+                    setIsRegister(false);
+                    setCredentials({ email: '', password: '', confirmPassword: '' });
+                    setError('');
+                  }}
+                  className="text-[11px] sm:text-[12px] text-[#1a85ff] hover:text-[#439AFF] transition" 
+                  style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 600 }}
+                >
+                  Sign In
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setIsRegister(true);
+                    setCredentials({ email: '', password: '', confirmPassword: '' });
+                    setError('');
+                  }}
+                  className="text-[11px] sm:text-[12px] text-[#1a85ff] hover:text-[#439AFF] transition" 
+                  style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 600 }}
+                >
+                  Sign Up
+                </button>
+              )}
             </div>
-          </div>
-
-          {/* Divider section - gap 5 */}
-          <div className="w-full flex items-center justify-center gap-[5px]">
-            <div className="flex-1 h-px bg-[#818ca2]/30"></div>
-            <span className="text-[12px] sm:text-[14px] text-[#818ca2] px-2" style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 500 }}>or</span>
-            <div className="flex-1 h-px bg-[#818ca2]/30"></div>
-          </div>
-
-          {/* Dev Mode section - gap 8 */}
-          <div className="w-full flex flex-col gap-2">
-            <label className="text-[12px] sm:text-[13px] text-[#818ca2]" style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 600 }}>
-              Dev Mode
-            </label>
-            <button
-              onClick={handleLocalStackConnect}
-              disabled={loading}
-              className="w-full h-[44px] px-3 py-4 bg-[#1f2029] hover:bg-[#16171D] disabled:bg-[#1f2029]/60 border border-[#242732] rounded-[16px] text-white transition flex items-center justify-center gap-2 text-[11px] sm:text-[12px]"
-              style={{ fontFamily: "'Albert Sans', sans-serif", fontWeight: 600 }}
-            >
-                <>
-                    <Settings className="w-5 h-5" />
-                    Connect to LocalStack
-                </>
-            </button>
           </div>
         </div>
       </div>

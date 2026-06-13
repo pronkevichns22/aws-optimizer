@@ -74,13 +74,17 @@ interface ScanResponse {
     high: string;
     medium: string;
     warning: string;
+    spendChange?: string;
+    wasteChange?: string;
   };
+  isFirstScan?: boolean;
 }
 
 interface SecurityPageProps {
   data?: any;
   initialView?: 'alerts' | 'logs';
   onPageChange?: (page: 'dashboard' | 'resources' | 'security' | 'settings', viewMode?: 'alerts' | 'logs') => void;
+  onAIModalStateChange?: (isOpen: boolean) => void;
 }
 
 // ========== Empty State Component ==========
@@ -94,7 +98,7 @@ const EmptyState = ({ title, description }: { title: string; description: string
 
 // ============ Components ============
 
-export const SecurityPage = ({ initialView = 'alerts', onPageChange }: SecurityPageProps) => {
+export const SecurityPage = ({ initialView = 'alerts', onPageChange, onAIModalStateChange }: SecurityPageProps) => {
   const { credentials } = useAWS();
   const [loading, setLoading] = useState(false);
   const [scanData, setScanData] = useState<ScanResponse | null>(null);
@@ -112,13 +116,27 @@ export const SecurityPage = ({ initialView = 'alerts', onPageChange }: SecurityP
         setLoading(true);
         setError(null);
 
-        if (!credentials) {
-          setError('AWS credentials not configured');
+        console.log('🔒 SecurityPage - Checking credentials:', {
+          credentialsExists: !!credentials,
+          hasAccessKey: !!credentials?.accessKeyId,
+          credentials: credentials ? { ...credentials, secretAccessKey: '***' } : null
+        });
+
+        if (!credentials || !credentials.accessKeyId) {
+          const errorMsg = !credentials ? 'AWS credentials not configured' : 'AWS Access Key is missing';
+          console.warn('⚠️ SecurityPage - Error:', errorMsg);
+          setError(errorMsg);
           setLoading(false);
           return;
         }
 
         console.log('🔒 Running security scan...');
+
+        // Normalize endpoint for LocalStack
+        let endpoint = credentials.endpoint;
+        if (credentials.isLocalStack && endpoint) {
+          endpoint = 'http://localhost:4566';
+        }
 
         const response = await fetch('http://localhost:5000/api/scan', {
           method: 'POST',
@@ -128,7 +146,7 @@ export const SecurityPage = ({ initialView = 'alerts', onPageChange }: SecurityP
             secretAccessKey: credentials.secretAccessKey,
             region: credentials.region || 'us-east-1',
             isLocalStack: credentials.isLocalStack || false,
-            endpoint: credentials.isLocalStack ? 'http://localhost:4566' : undefined,
+            endpoint: credentials.isLocalStack ? endpoint : undefined,
           }),
         });
 
@@ -347,6 +365,8 @@ export const SecurityPage = ({ initialView = 'alerts', onPageChange }: SecurityP
           onPageChange={onPageChange}
           currentPage="security"
           onToggleView={handleToggleView}
+          currentView={activeView}
+          onAIModalStateChange={onAIModalStateChange}
         />
 
         {/* Main Content */}
@@ -371,32 +391,32 @@ export const SecurityPage = ({ initialView = 'alerts', onPageChange }: SecurityP
                   {
                     label: 'Security Score',
                     value: `${scanData.summary.healthScore}/100`,
-                    trend: scanData.trendMetrics?.warning || '+0%',
-                    trendType: scanData.trendMetrics?.warning?.includes('-') ? 'positive' : 'negative',
+                    trend: scanData.trendMetrics?.critical || 'N/A',
+                    trendType: scanData.trendMetrics?.critical === 'N/A' ? 'positive' : (scanData.trendMetrics?.critical && scanData.trendMetrics.critical?.includes('-')) ? 'positive' : 'negative',
                   },
                   {
                     label: 'Configuration Issues',
                     value: scanData.alerts.filter(a => a.severity === 'WARNING').length,
-                    trend: scanData.trendMetrics?.warning || '+0%',
-                    trendType: scanData.trendMetrics?.warning?.includes('-') ? 'positive' : 'negative',
+                    trend: scanData.trendMetrics?.warning || 'N/A',
+                    trendType: scanData.trendMetrics?.warning === 'N/A' ? 'positive' : (scanData.trendMetrics?.warning && scanData.trendMetrics.warning?.includes('-')) ? 'positive' : 'negative',
                   },
                   {
                     label: 'Important',
                     value: scanData.alerts.filter(a => a.severity === 'MEDIUM').length,
-                    trend: scanData.trendMetrics?.medium || '+0%',
-                    trendType: scanData.trendMetrics?.medium?.includes('-') ? 'positive' : 'negative',
+                    trend: scanData.trendMetrics?.medium || 'N/A',
+                    trendType: scanData.trendMetrics?.medium === 'N/A' ? 'positive' : (scanData.trendMetrics?.medium && scanData.trendMetrics.medium?.includes('-')) ? 'positive' : 'negative',
                   },
                   {
                     label: 'Serious',
                     value: scanData.alerts.filter(a => a.severity === 'HIGH').length,
-                    trend: scanData.trendMetrics?.high || '+0%',
-                    trendType: scanData.trendMetrics?.high?.includes('-') ? 'positive' : 'negative',
+                    trend: scanData.trendMetrics?.high || 'N/A',
+                    trendType: scanData.trendMetrics?.high === 'N/A' ? 'positive' : (scanData.trendMetrics?.high && scanData.trendMetrics.high?.includes('-')) ? 'positive' : 'negative',
                   },
                   {
                     label: 'Critical',
                     value: scanData.alerts.filter(a => a.severity === 'CRITICAL').length,
-                    trend: scanData.trendMetrics?.critical || '+0%',
-                    trendType: scanData.trendMetrics?.critical?.includes('-') ? 'positive' : 'negative',
+                    trend: scanData.trendMetrics?.critical || 'N/A',
+                    trendType: scanData.trendMetrics?.critical === 'N/A' ? 'positive' : (scanData.trendMetrics?.critical && scanData.trendMetrics.critical?.includes('-')) ? 'positive' : 'negative',
                   },
                 ]}
               />

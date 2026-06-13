@@ -27,6 +27,22 @@ import {
 import { IAMClient, ListUsersCommand, GetLoginProfileCommand } from '@aws-sdk/client-iam';
 import { getAIRecommendations, getSecurityRecommendations, getCostOptimizationRecommendations, getUserAIResponse } from './ai-advisor';
 
+// ========== RAG Vector Store imports ==========
+import { initializeVectorStore, getVectorStoreStats } from './vector-store';
+
+// ========== Authentication and models imports ==========
+import { User, UserSession, ChatHistory, AIPreferences, SecurityMetrics } from './models';
+import authRoutes from './auth-routes';
+import chatRoutes from './chat-routes';
+import { authMiddleware, optionalAuthMiddleware } from './auth-middleware';
+import { runExtendedSecurityRules } from './security-rules';
+import { 
+  runProwlerCISBenchmark, 
+  isProwlerInstalled,
+  getProwlerInfo,
+  getProwlerInstallationInstructions
+} from './prowler-integration';
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -34,6 +50,10 @@ const PORT = process.env.PORT || 5000;
 app.use(cors()); // Allow requests from React frontend
 app.use(express.json({ limit: '50mb' })); // Parse JSON request bodies with increased limit
 app.use(express.urlencoded({ limit: '50mb', extended: true })); // Handle URL-encoded data
+
+// ========== Mount auth and chat routes ==========
+app.use('/api/auth', authRoutes);
+app.use('/api', chatRoutes);
 
 // ============================================================================
 // TYPE DEFINITIONS - Strongly typed alert and audit structures
@@ -132,18 +152,9 @@ const AuditSchema = new mongoose.Schema({
 const Audit = mongoose.model('Audit', AuditSchema);
 
 // Schema for storing user accounts and AWS credentials
-const UserSchema = new mongoose.Schema({
-    username: { type: String, required: true, unique: true },
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    awsAccessKeyId: String,
-    awsSecretAccessKey: String,
-    awsRegion: { type: String, default: 'us-east-1' },
-    isLocalStack: { type: Boolean, default: false },
-    localStackEndpoint: { type: String, default: 'http://localhost:4566' },
-    createdAt: { type: Date, default: Date.now }
-});
-const User = mongoose.model('User', UserSchema);
+// MOVED TO models.ts - imported above as User
+// const UserSchema = new mongoose.Schema({...});
+// const User = mongoose.model('User', UserSchema);
 
 // ============================================================================
 // RULES ENGINE - Core CSPM and FinOps alert generation system
@@ -777,13 +788,13 @@ const createEC2Client = (credentials: any) => {
     // Add endpoint for LocalStack when using local AWS emulation
     if (credentials.isLocalStack) {
         config.endpoint = credentials.endpoint || 'http://localhost:4566';
-        console.log(`\n🔧 LocalStack Config: endpoint=${config.endpoint}`);
+        console.log(`\n🔧 LocalStack Endpoint: ${config.endpoint}`);
     }
 
     console.log(`🔧 EC2 Client Config:`, {
         region: config.region,
         hasCredentials: !!config.credentials.accessKeyId,
-        endpoint: config.endpoint || 'AWS default'
+        endpoint: credentials.endpoint || 'AWS (default)'
     });
 
     return new EC2Client(config);
@@ -792,335 +803,23 @@ const createEC2Client = (credentials: any) => {
 // ============================================================================
 // API ENDPOINTS
 // ============================================================================
-
-// ========== AUTHENTICATION ENDPOINTS ==========
-
-// ========== POST /api/auth/register - Register new user with AWS credentials ==========
-app.post('/api/auth/register', async (req, res) => {
-    try {
-        const { username, email, password, accessKeyId, secretAccessKey, region, isLocalStack, endpoint } = req.body;
-
-        // Check if user already exists
-        const existingUser = await User.findOne({ 
-            $or: [{ username }, { email }] 
-        });
-
-        if (existingUser) {
-            return res.status(400).json({ error: 'User with this username or email already exists' });
-        }
-
-        // Create new user (TODO: Use bcrypt for password hashing in production!)
-        const newUser = new User({
-            username,
-            email,
-            password, // NOTE: Password should be hashed before storing!
-            awsAccessKeyId: accessKeyId,
-            awsSecretAccessKey: secretAccessKey,
-            awsRegion: region || 'us-east-1',
-            isLocalStack: isLocalStack || false,
-            localStackEndpoint: endpoint || 'http://localhost:4566'
-        });
-
-        await newUser.save();
-
-        res.status(201).json({ 
-            message: 'Пользователь успешно создан',
-            userId: newUser._id,
-            username: newUser.username
-        });
-    } catch (error) {
-        console.error('Ошибка при регистрации:', error);
-        res.status(500).json({ error: 'Ошибка при регистрации', message: String(error) });
-    }
-});
-
-// 2. Вход пользователя
-app.post('/api/auth/login', async (req, res) => {
-    try {
-        const { username, password, accessKeyId, secretAccessKey, region, isLocalStack, endpoint } = req.body;
-
-        // Если передали credentials, используем их напрямую
-        if (accessKeyId && secretAccessKey) {
-            // Проверяем доступность AWS/LocalStack
-            const testClient = createEC2Client({
-                accessKeyId,
-                secretAccessKey,
-                region: region || 'us-east-1',
-                isLocalStack,
-                endpoint
-            });
-
-            try {
-                // Пытаемся выполнить простой запрос для проверки credentials
-                await testClient.send(new DescribeInstancesCommand({}));
-                
-                return res.status(200).json({
-                    success: true,
-                    message: 'Успешное подключение',
-                    session: {
-                        type: isLocalStack ? 'localstack' : 'aws',
-                        accessKeyId: accessKeyId.substring(0, 4) + '****', // скрываем ключ
-                        region: region || 'us-east-1'
-                    }
-                });
-            } catch (awsError: any) {
-                return res.status(401).json({ 
-                    error: 'Неверная учетная запись или недоступна служба',
-                    details: awsError.message 
-                });
-            }
-        }
-
-        // Если нет credentials, ищем пользователя по username
-        if (username && password) {
-            const user = await User.findOne({ username });
-
-            if (!user || user.password !== password) { // TODO: используйте bcrypt.compare()!
-                return res.status(401).json({ error: 'Неверный username или пароль' });
-            }
-
-            // Проверяем AWS/LocalStack credentials
-            const testClient = createEC2Client({
-                accessKeyId: user.awsAccessKeyId,
-                secretAccessKey: user.awsSecretAccessKey,
-                region: user.awsRegion,
-                isLocalStack: user.isLocalStack,
-                endpoint: user.localStackEndpoint
-            });
-
-            try {
-                await testClient.send(new DescribeInstancesCommand({}));
-                
-                return res.status(200).json({
-                    success: true,
-                    message: 'Вход выполнен успешно',
-                    userId: user._id,
-                    username: user.username,
-                    session: {
-                        type: user.isLocalStack ? 'localstack' : 'aws',
-                        region: user.awsRegion
-                    }
-                });
-            } catch (awsError: any) {
-                return res.status(401).json({ 
-                    error: 'Ошибка подключения к AWS/LocalStack',
-                    details: awsError.message 
-                });
-            }
-        }
-
-        res.status(400).json({ error: 'Требуются credentials или username/password' });
-    } catch (error) {
-        console.error('Ошибка при входе:', error);
-        res.status(500).json({ error: 'Ошибка при входе', message: String(error) });
-    }
-});
-
-// 3. Валидация текущей сессии
-app.post('/api/auth/validate', async (req, res) => {
-    try {
-        const { accessKeyId, secretAccessKey, region, isLocalStack, endpoint } = req.body;
-
-        const testClient = createEC2Client({
-            accessKeyId,
-            secretAccessKey,
-            region,
-            isLocalStack,
-            endpoint
-        });
-
-        await testClient.send(new DescribeInstancesCommand({}));
-        
-        res.status(200).json({ valid: true });
-    } catch (error: any) {
-        res.status(401).json({ valid: false, error: error.message });
-    }
-});
-
-// 4. Security Scanner Endpoint - Performs real security audit of AWS infrastructure
-app.get('/api/security-scan', async (req, res) => {
-    try {
-        const { accessKeyId, secretAccessKey, region, isLocalStack, endpoint } = req.query;
-
-        if (!accessKeyId || !secretAccessKey) {
-            return res.status(400).json({ error: 'AWS credentials are required' });
-        }
-
-        // Create EC2 and IAM clients
-        const ec2Config: any = {
-            region: (region as string) || 'us-east-1',
-            credentials: {
-                accessKeyId: accessKeyId as string,
-                secretAccessKey: secretAccessKey as string,
-            },
-        };
-
-        const iamConfig: any = {
-            region: (region as string) || 'us-east-1',
-            credentials: {
-                accessKeyId: accessKeyId as string,
-                secretAccessKey: secretAccessKey as string,
-            },
-        };
-
-        if (isLocalStack === 'true') {
-            ec2Config.endpoint = (endpoint as string) || 'http://localhost:4566';
-            iamConfig.endpoint = (endpoint as string) || 'http://localhost:4566';
-        }
-
-        const ec2Client = new EC2Client(ec2Config);
-        const iamClient = new IAMClient(iamConfig);
-
-        console.log('🔒 Security scan initiated...');
-
-        const findings: any[] = [];
-        let criticalCount = 0;
-        let highCount = 0;
-        let mediumCount = 0;
-
-        // ============ CHECK 1: Security Groups ============
-        console.log('📋 Checking Security Groups...');
-        try {
-            const sgData = await ec2Client.send(new DescribeSecurityGroupsCommand({}));
-            const securityGroups = sgData.SecurityGroups || [];
-
-            for (const sg of securityGroups) {
-                // Check inbound rules for open SSH (22) and RDP (3389)
-                const ingressRules = sg.IpPermissions || [];
-
-                for (const rule of ingressRules) {
-                    const ports = [rule.FromPort, rule.ToPort];
-
-                    // Check for SSH (port 22)
-                    if (
-                        (rule.FromPort === 22 || rule.ToPort === 22 || (rule.FromPort! <= 22 && rule.ToPort! >= 22)) &&
-                        (rule.IpRanges?.some((r) => r.CidrIp === '0.0.0.0/0') ||
-                            rule.Ipv6Ranges?.some((r) => r.CidrIpv6 === '::/0'))
-                    ) {
-                        criticalCount++;
-                        findings.push({
-                            id: `${sg.GroupId}-ssh`,
-                            type: 'SecurityGroup',
-                            severity: 'CRITICAL',
-                            title: 'SSH Open to World',
-                            description: `Port 22 (SSH) is open to 0.0.0.0/0 on Security Group ${sg.GroupName} (${sg.GroupId}). This allows unrestricted SSH access.`,
-                            resourceId: sg.GroupId,
-                            resourceName: sg.GroupName,
-                        });
-                    }
-
-                    // Check for RDP (port 3389)
-                    if (
-                        (rule.FromPort === 3389 || rule.ToPort === 3389 || (rule.FromPort! <= 3389 && rule.ToPort! >= 3389)) &&
-                        (rule.IpRanges?.some((r) => r.CidrIp === '0.0.0.0/0') ||
-                            rule.Ipv6Ranges?.some((r) => r.CidrIpv6 === '::/0'))
-                    ) {
-                        criticalCount++;
-                        findings.push({
-                            id: `${sg.GroupId}-rdp`,
-                            type: 'SecurityGroup',
-                            severity: 'CRITICAL',
-                            title: 'RDP Open to World',
-                            description: `Port 3389 (RDP) is open to 0.0.0.0/0 on Security Group ${sg.GroupName} (${sg.GroupId}). This allows unrestricted RDP access.`,
-                            resourceId: sg.GroupId,
-                            resourceName: sg.GroupName,
-                        });
-                    }
-                }
-            }
-
-            console.log(`✅ Security Groups checked: ${securityGroups.length} groups inspected`);
-        } catch (error: any) {
-            console.error('⚠️ Error checking Security Groups:', error.message);
-        }
-
-        // ============ CHECK 2: IAM Users ============
-        console.log('👤 Checking IAM Users...');
-        try {
-            const usersData = await iamClient.send(new ListUsersCommand({}));
-            const users = usersData.Users || [];
-
-            for (const user of users) {
-                const createdDate = user.CreateDate;
-                const now = new Date();
-                const daysSinceCreation = Math.floor(
-                    (now.getTime() - (createdDate ? createdDate.getTime() : now.getTime())) / (1000 * 60 * 60 * 24)
-                );
-
-                // Check if password is older than 90 days
-                if (daysSinceCreation > 90) {
-                    try {
-                        const loginProfile = await iamClient.send(
-                            new GetLoginProfileCommand({ UserName: user.UserName! })
-                        );
-
-                        if (loginProfile.LoginProfile) {
-                            const passwordLastUsed = loginProfile.LoginProfile.CreateDate;
-                            const daysSincePasswordCreation = Math.floor(
-                                (now.getTime() - (passwordLastUsed ? passwordLastUsed.getTime() : now.getTime())) /
-                                    (1000 * 60 * 60 * 24)
-                            );
-
-                            if (daysSincePasswordCreation > 90) {
-                                highCount++;
-                                findings.push({
-                                    id: `iam-${user.UserName}`,
-                                    type: 'IAM',
-                                    severity: 'HIGH',
-                                    title: 'IAM User with Old Password',
-                                    description: `IAM user '${user.UserName}' has not updated their password in ${daysSincePasswordCreation} days (threshold: 90 days). Consider enforcing password rotation.`,
-                                    resourceId: user.UserName,
-                                    resourceName: user.UserName,
-                                });
-                            }
-                        }
-                    } catch (error: any) {
-                        // User might not have a login profile (access key only user)
-                        if (error.name !== 'NoSuchEntityException') {
-                            console.warn(`⚠️  Error checking login profile for ${user.UserName}:`, error.message);
-                        }
-                    }
-                }
-            }
-
-            console.log(`✅ IAM Users checked: ${users.length} users inspected`);
-        } catch (error: any) {
-            console.error('⚠️ Error checking IAM Users:', error.message);
-        }
-
-        // ============ Calculate Health Score ============
-        const totalFindings = findings.length;
-        const healthScore = Math.max(0, 100 - criticalCount * 15 - highCount * 8 - mediumCount * 3);
-
-        console.log(`📊 Security Scan Complete - Health Score: ${healthScore}`);
-
-        // ============ Response ============
-        return res.status(200).json({
-            healthScore: Math.round(healthScore),
-            timestamp: new Date().toISOString(),
-            summary: {
-                critical: criticalCount,
-                high: highCount,
-                medium: mediumCount,
-                total: totalFindings,
-            },
-            findings: findings.sort((a, b) => {
-                const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-                return (severityOrder[a.severity as keyof typeof severityOrder] || 4) -
-                    (severityOrder[b.severity as keyof typeof severityOrder] || 4);
-            }),
-        });
-    } catch (error: any) {
-        console.error('❌ Security scan failed:', error);
-        return res.status(500).json({
-            error: 'Security scan failed',
-            message: error.message,
-            healthScore: 0,
-            summary: { critical: 0, high: 0, medium: 0, total: 0 },
-            findings: [],
-        });
-    }
-});
+// AUTHENTICATION ENDPOINTS - MOVED TO auth-routes.ts
+// ============================================================================
+// Old endpoints:
+// - POST /api/auth/register - register with username and AWS credentials
+// - POST /api/auth/login - login with username/password or direct credentials
+// - POST /api/auth/validate - validate AWS credentials
+//
+// New endpoints available via authRoutes:
+// - POST /api/auth/register - new user registration (password-based)
+// - POST /api/auth/login - user login (email/password-based)
+// - POST /api/auth/logout - logout and invalidate session
+// - GET /api/auth/profile - get current user profile
+// - POST /api/auth/credentials - save encrypted AWS credentials
+// - POST /api/auth/change-password - change user password
+// ============================================================================
+// API ENDPOINTS - Main scanning, recommendations, and AI endpoints
+// ============================================================================
 
 // ========== POST /api/scan - Advanced CSPM & FinOps Scanning with Alert Generation ==========
 /**
@@ -1133,9 +832,10 @@ app.get('/api/security-scan', async (req, res) => {
  * 
  * This is the core CloudOpti endpoint that replaces expensive native AWS services
  */
-app.post('/api/scan', async (req, res) => {
+app.post('/api/scan', optionalAuthMiddleware, async (req, res) => {
     try {
         const { accessKeyId, secretAccessKey, region, isLocalStack, endpoint } = req.body;
+        const userId = (req as any).userId; // Get userId from optional auth middleware
 
         console.log('\n='.repeat(80));
         console.log('📨 /api/scan - CSPM & FinOps Scan Initiated');
@@ -1241,22 +941,67 @@ app.post('/api/scan', async (req, res) => {
         };
 
         // ============================================================
-        // STEP 4: Execute Custom Rules Engine (CORE FEATURE)
+        // STEP 4: Try to use Prowler for CIS Benchmark checking
         // ============================================================
         console.log('\n' + '-'.repeat(80));
-        const generatedAlerts = rulesEngine(assets, costConfig);
-
-        // Separate alerts by type for summary
-        const securityAlerts = generatedAlerts.filter(a => a.type === 'SECURITY');
-        const finopsAlerts = generatedAlerts.filter(a => a.type === 'FINOPS');
-
-        console.log('\n📊 Alert Summary:');
-        console.log(`   🔒 Security Alerts: ${securityAlerts.length}`);
-        console.log(`   💰 FinOps Alerts: ${finopsAlerts.length}`);
-        console.log(`   📋 Total Alerts: ${generatedAlerts.length}`);
+        
+        let prowlerAlerts: any[] = [];
+        const prowlerInstalled = await isProwlerInstalled();
+        
+        if (prowlerInstalled) {
+            console.log('\n🔍 Prowler CIS Benchmark Scanner Detected\n');
+            try {
+                prowlerAlerts = await runProwlerCISBenchmark({
+                    accessKeyId,
+                    secretAccessKey,
+                    region: region || 'us-east-1',
+                    isLocalStack,
+                    endpoint
+                });
+                console.log(`  ✅ Prowler: ${prowlerAlerts.length} CIS findings`);
+            } catch (err: any) {
+                console.warn(`  ⚠️  Prowler error: ${err.message}`);
+                console.warn('  📌 Continuing with built-in rules...');
+            }
+        } else {
+            console.log('\n📌 Prowler not installed - using built-in security rules');
+            console.log('   To install: pip install prowler-cloud');
+            console.log('   Or check: https://docs.prowler.cloud/en/latest/getting-started/\n');
+        }
 
         // ============================================================
-        // STEP 5: Calculate Financial Metrics
+        // STEP 5: Execute Custom Rules Engine (Fallback/Supplementary)
+        // ============================================================
+        console.log('\n' + '-'.repeat(80));
+        const builtInAlerts = rulesEngine(assets, costConfig);
+        const extendedAlerts = runExtendedSecurityRules(instances, securityGroups, volumes, elasticIPs);
+        
+        // Combine all alerts: Prowler (if available) + Built-in rules + Extended CIS rules
+        const generatedAlerts = [
+            ...prowlerAlerts,      // Prowler CIS Benchmark findings (if installed)
+            ...builtInAlerts,      // Built-in CSPM rules
+            ...extendedAlerts      // Extended CIS + Best Practices
+        ];
+
+        // Deduplicate by ruleId (avoid duplicate findings)
+        const deduplicatedAlerts = Array.from(
+            new Map(generatedAlerts.map(alert => [alert.ruleId, alert])).values()
+        );
+
+        // Separate alerts by type for summary
+        const securityAlerts = deduplicatedAlerts.filter(a => a.type === 'SECURITY');
+        const finopsAlerts = deduplicatedAlerts.filter(a => a.type === 'FINOPS');
+
+        console.log('\n📊 Complete Alert Summary:');
+        console.log(`   🔒 Security Alerts: ${securityAlerts.length}`);
+        console.log(`   💰 FinOps Alerts: ${finopsAlerts.length}`);
+        console.log(`   📋 Total Alerts: ${deduplicatedAlerts.length}`);
+        if (prowlerAlerts.length > 0) {
+            console.log(`   🎯 From Prowler CIS: ${prowlerAlerts.length}`);
+        }
+
+        // ============================================================
+        // STEP 6: Calculate Financial Metrics
         // ============================================================
         console.log('\n' + '-'.repeat(80));
         console.log('\n💰 Calculating Financial Metrics...\n');
@@ -1300,7 +1045,7 @@ app.post('/api/scan', async (req, res) => {
             ...instances.map(inst => ({
                 id: inst.InstanceId,
                 type: 'EC2',
-                size: 0,
+                size: inst.InstanceType || 'unknown',
                 cost: inst.State?.Name === 'running' ? costConfig.PRICE_PER_SERVER : 0,
                 region: inst.Placement?.AvailabilityZone || 'unknown',
                 status: inst.State?.Name || 'unknown'
@@ -1316,7 +1061,7 @@ app.post('/api/scan', async (req, res) => {
             ...elasticIPs.map(ip => ({
                 id: ip.PublicIp,
                 type: 'IP',
-                size: 0,
+                size: ip.AssociationId ? 'attached' : 'unattached',
                 cost: ip.AssociationId ? 0 : costConfig.PRICE_PER_IP,
                 region: ip.Domain || 'vpc',
                 status: ip.AssociationId ? 'attached' : 'unattached'
@@ -1391,14 +1136,48 @@ app.post('/api/scan', async (req, res) => {
         console.log(`  ✓ Alerts saved: ${auditDocument.alerts?.length || 0}`);
 
         // ============================================================
-        // STEP 7.5: Calculate trend metrics (compare with previous scan)
+        // STEP 7.5: Save security metrics for trend tracking
         // ============================================================
         console.log('\n' + '-'.repeat(80));
+        console.log('\n💾 Saving Security Metrics for Trends...\n');
+        
+        const currentMetrics = await SecurityMetrics.create({
+          userId: userId || undefined, // Save user-specific metrics if authenticated
+          timestamp: new Date(),
+          alertCounts: {
+            critical: securityAlerts.filter(a => a.severity === 'CRITICAL').length,
+            high: securityAlerts.filter(a => a.severity === 'HIGH').length,
+            medium: securityAlerts.filter(a => a.severity === 'MEDIUM').length,
+            warning: finopsAlerts.filter(a => a.severity === 'WARNING').length + 
+                     securityAlerts.filter(a => a.severity === 'WARNING').length,
+            info: securityAlerts.filter(a => a.severity === 'INFO').length,
+          },
+          healthScore: healthScore,
+          configurationIssues: securityAlerts.filter(a => a.severity === 'WARNING').length,
+          totalResources: allResources.length,
+          resourceCounts: {
+            ec2: instances.length,
+            ebs: volumes.length,
+            elasticIPs: elasticIPs.length,
+            securityGroups: securityGroups.length,
+          },
+          totalSpend: parseFloat(totalSpend.toFixed(2)),
+          totalWaste: parseFloat(totalWaste.toFixed(2)),
+        });
+
+        // ============================================================
+        // STEP 7.6: Calculate trend metrics (compare with last scan)
+        // ============================================================
         console.log('\n📊 Calculating Trend Metrics...\n');
 
-        const previousAudit = await Audit.findOne({
-            _id: { $ne: auditDocument._id }
-        }).sort({ timestamp: -1 });
+        // Get the last previous scan (any scan before current one)
+        const query: any = {
+          timestamp: { $lt: auditDocument.timestamp }
+        };
+        if (userId) {
+          query.userId = userId; // Filter by user if authenticated
+        }
+        const previousMetrics = await SecurityMetrics.findOne(query).sort({ timestamp: -1 });
 
         type AlertSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'WARNING' | 'INFO';
         type AlertCounts = Record<AlertSeverity, number>;
@@ -1412,11 +1191,21 @@ app.post('/api/scan', async (req, res) => {
         });
 
         const currentCounts = calculateAlertCounts(generatedAlerts);
-        const previousCounts: AlertCounts = previousAudit 
-            ? calculateAlertCounts(previousAudit.alerts || [])
+        const isFirstScan = !previousMetrics; // Check if this is the first scan
+        const previousCounts: AlertCounts = previousMetrics
+            ? {
+                CRITICAL: previousMetrics.alertCounts?.critical || 0,
+                HIGH: previousMetrics.alertCounts?.high || 0,
+                MEDIUM: previousMetrics.alertCounts?.medium || 0,
+                WARNING: previousMetrics.alertCounts?.warning || 0,
+                INFO: previousMetrics.alertCounts?.info || 0,
+              }
             : { CRITICAL: 0, HIGH: 0, MEDIUM: 0, WARNING: 0, INFO: 0 };
 
+        // For first scan, always show N/A (no comparison data available)
         const calculatePercentChange = (current: number, previous: number): string => {
+            if (isFirstScan) return 'N/A';
+            if (previous === 0 && current === 0) return '0%';
             if (previous === 0) return current > 0 ? '+100%' : '0%';
             const change = ((current - previous) / previous) * 100;
             return change > 0 ? `+${change.toFixed(0)}%` : `${change.toFixed(0)}%`;
@@ -1427,6 +1216,14 @@ app.post('/api/scan', async (req, res) => {
             high: calculatePercentChange(currentCounts.HIGH, previousCounts.HIGH),
             medium: calculatePercentChange(currentCounts.MEDIUM, previousCounts.MEDIUM),
             warning: calculatePercentChange(currentCounts.WARNING, previousCounts.WARNING),
+            spendChange: calculatePercentChange(
+                totalSpend as number,
+                previousMetrics?.totalSpend || 0
+            ),
+            wasteChange: calculatePercentChange(
+                totalWaste as number,
+                previousMetrics?.totalWaste || 0
+            ),
         };
 
         console.log('  Alert Trends (vs last scan):');
@@ -1434,6 +1231,9 @@ app.post('/api/scan', async (req, res) => {
         console.log(`    High:     ${previousCounts.HIGH} → ${currentCounts.HIGH} (${trendMetrics.high})`);
         console.log(`    Medium:   ${previousCounts.MEDIUM} → ${currentCounts.MEDIUM} (${trendMetrics.medium})`);
         console.log(`    Warning:  ${previousCounts.WARNING} → ${currentCounts.WARNING} (${trendMetrics.warning})`);
+        console.log(`  Financial Trends (vs last scan):`);
+        console.log(`    Total Spend: $${previousMetrics?.totalSpend || 0} → $${totalSpend} (${trendMetrics.spendChange})`);
+        console.log(`    Total Waste: $${previousMetrics?.totalWaste || 0} → $${totalWaste} (${trendMetrics.wasteChange})`);
 
         // ============================================================
         // STEP 8: Build Response
@@ -1480,6 +1280,9 @@ app.post('/api/scan', async (req, res) => {
             
             // Trend Metrics (vs last scan)
             trendMetrics: trendMetrics,
+            
+            // First Scan Flag
+            isFirstScan: isFirstScan,
         };
 
         console.log('='.repeat(80));
@@ -1517,11 +1320,12 @@ app.post('/api/scan', async (req, res) => {
                     warning: 0,
                 },
                 trendMetrics: {
-                    critical: '0%',
-                    high: '0%',
-                    medium: '0%',
-                    warning: '0%',
+                    critical: 'N/A',
+                    high: 'N/A',
+                    medium: 'N/A',
+                    warning: 'N/A',
                 },
+                isFirstScan: true,
             }
         });
     }
@@ -1706,15 +1510,117 @@ app.post('/api/ai-message', async (req, res) => {
     }
 });
 
+// AI Advisor endpoint (alias for ai-message)
+app.post('/api/ai-advisor', async (req, res) => {
+    console.log('\n🔔 ENDPOINT HIT: /api/ai-advisor', { method: 'POST', messageLength: req.body.message?.length || 0 });
+    try {
+        const { message, alerts, resourceCount, totalCost, context, chatHistory = [] } = req.body;
+        
+        if (!message || typeof message !== 'string') {
+            console.log('❌ Invalid message:', { message, type: typeof message });
+            return res.status(400).json({
+                success: false,
+                error: 'Message is required'
+            });
+        }
+
+        console.log(`\n💬 Processing AI advisor message: "${message.slice(0, 50)}..." (history: ${chatHistory.length} messages)`);
+
+        // Get AI response with optional context AND chat history
+        const response = await getUserAIResponse(message, {
+            alerts: alerts || context?.alerts || [],
+            resourceCount: resourceCount || context?.resourceCount,
+            totalCost: totalCost || context?.totalCost,
+            chatHistory: chatHistory
+        });
+
+        console.log('✅ AI advisor message processed successfully');
+
+        // Log API call for tracking
+        const apiCall = new Audit({
+            apiCall: {
+                endpoint: '/api/ai-advisor',
+                method: 'POST',
+                timestamp: new Date(),
+                status: 'success'
+            }
+        });
+        
+        await apiCall.save();
+
+        return res.json({
+            success: true,
+            response,
+            data: {
+                response,
+                timestamp: new Date()
+            }
+        });
+    } catch (error: any) {
+        console.error('❌ AI advisor processing failed:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Failed to process message',
+            message: error.message
+        });
+    }
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date() });
 });
 
+// Prowler status endpoint - check if Prowler is installed and configured
+app.get('/api/prowler/status', async (req, res) => {
+    try {
+        const prowlerInfo = await getProwlerInfo();
+        
+        res.json({
+            installed: prowlerInfo.installed,
+            version: prowlerInfo.version || 'Unknown',
+            location: prowlerInfo.location || 'Not found',
+            command: prowlerInfo.command || 'prowler',
+            pythonVersion: prowlerInfo.pythonVersion || 'Unknown',
+            status: prowlerInfo.installed ? 'Ready' : 'Not installed',
+            help: !prowlerInfo.installed ? getProwlerInstallationInstructions() : undefined
+        });
+    } catch (error: any) {
+        res.status(500).json({
+            error: 'Failed to check Prowler status',
+            message: error.message
+        });
+    }
+});
+
+// Prowler installation instructions endpoint
+app.get('/api/prowler/install-instructions', (req, res) => {
+    res.json({
+        instructions: getProwlerInstallationInstructions(),
+        platform: process.platform,
+        pythonAvailable: process.platform === 'win32' ? 'Check PATH' : 'Use which python'
+    });
+});
+
 // 6. Подключение к MongoDB и запуск сервера
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/aws_optimizer')
-    .then(() => {
+    .then(async () => {
         console.log('✅ MongoDB подключена');
+        
+        // 🚀 Initialize RAG Vector Store (loads all knowledge base documents)
+        console.log('\n🤖 Инициализация RAG Vector Store...');
+        try {
+            await initializeVectorStore();
+            const stats = await getVectorStoreStats();
+            console.log('📊 RAG Vector Store Statistics:');
+            console.log(`   Total documents: ${stats.totalDocuments}`);
+            console.log(`   By category: ${JSON.stringify(stats.byCategory)}`);
+            console.log(`   By severity: ${JSON.stringify(stats.bySeverity)}`);
+            console.log('✅ RAG готова к использованию!\n');
+        } catch (error) {
+            console.error('⚠️  RAG инициализация failed (система продолжит работать без RAG):', error);
+        }
+        
         app.listen(PORT, () => {
             console.log(`🚀 Сервер запущен на http://localhost:${PORT}`);
         });

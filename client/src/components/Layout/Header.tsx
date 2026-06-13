@@ -6,6 +6,7 @@
 
 import { LogOut, LayoutDashboard, Boxes, ShieldHalf, Settings, Cloud } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 // ========== Props for Header component ==========
 interface HeaderProps {
@@ -18,6 +19,7 @@ interface NavItem {
   id: 'dashboard' | 'resources' | 'security' | 'settings';
   label: string;
   icon: any;
+  path: string;
 }
 
 const DashboardIcon = ({ className = 'w-4 h-4' }) => <LayoutDashboard className={`${className} text-[#FFFFFF]`} strokeWidth={2} />;
@@ -26,6 +28,7 @@ const SecurityIcon = ({ className = 'w-4 h-4' }) => <ShieldHalf className={`${cl
 const SettingsIcon = ({ className = 'w-4 h-4' }) => <Settings className={`${className} text-[#FFFFFF]`} strokeWidth={2} />;
 
 export const Header = ({ currentPage, onPageChange, onLogout }: HeaderProps) => {
+  const navigate = useNavigate();
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
 
@@ -36,11 +39,16 @@ export const Header = ({ currentPage, onPageChange, onLogout }: HeaderProps) => 
   }, []);
 
   const navItems: NavItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: DashboardIcon },
-    { id: 'resources', label: 'Resources', icon: ResourcesIcon },
-    { id: 'security', label: 'Security', icon: SecurityIcon },
-    { id: 'settings', label: 'Settings', icon: SettingsIcon }
+    { id: 'dashboard', label: 'Dashboard', icon: DashboardIcon, path: '/dashboard' },
+    { id: 'resources', label: 'Resources', icon: ResourcesIcon, path: '/resources' },
+    { id: 'security', label: 'Security', icon: SecurityIcon, path: '/security' },
+    { id: 'settings', label: 'Settings', icon: SettingsIcon, path: '/settings' }
   ];
+
+  const handleNavigate = (item: NavItem) => {
+    onPageChange(item.id);
+    navigate(item.path);
+  };
 
   return (
     <header 
@@ -75,7 +83,7 @@ export const Header = ({ currentPage, onPageChange, onLogout }: HeaderProps) => 
               return (
                 <button
                   key={item.id}
-                  onClick={() => onPageChange(item.id as any)}
+                  onClick={() => handleNavigate(item)}
                   onMouseEnter={() => setHoveredItem(item.id)}
                   onMouseLeave={() => setHoveredItem(null)}
                   className="py-2 flex items-center gap-1 font-['Albert_Sans'] transition-all"
