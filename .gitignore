@@ -5,6 +5,9 @@
 .env.production.local
 .env.development.local
 .env.test.local
+.env.server
+# Explicit ignore for server environment file
+server/.env
 
 # 🔑 API Keys and Secrets
 *.key
