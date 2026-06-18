@@ -49,10 +49,8 @@ out/
 *.sublime-workspace
 .DS_Store
 
-# System files
+# OS
 Thumbs.db
-.AppleDouble
-.LSOverride
 
 # Testing
 coverage/
@@ -61,10 +59,3 @@ coverage/
 # Database
 *.db
 *.sqlite
-*.sqlite3
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-*.bak
