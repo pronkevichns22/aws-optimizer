@@ -90,7 +90,7 @@ URL: http://localhost:8081
 ### Шаг 1: Клонируйте репозиторий
 
 ```bash
-git clone https://github.com/yourusername/aws-optimizer.git
+git clone https://github.com/pronkevichns22/aws-optimizer.git
 cd aws-optimizer
 ```
 
